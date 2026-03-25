@@ -22,9 +22,10 @@ class ADBError(Exception):
 
 
 class ADBAutomation:
-    def __init__(self, adb_path: str = "adb", log_callback=None):
+    def __init__(self, adb_path: str = "adb", log_callback=None, device_serial=None):
         self.adb = adb_path
         self.log = log_callback or print
+        self.device_serial = device_serial
         self.screen_width = 1080
         self.screen_height = 2340
         self.temp_dir = Path("temp_ui")
@@ -33,7 +34,12 @@ class ADBAutomation:
     # ── ADB primitives ──────────────────────────────────────────────
 
     def run(self, *args, timeout=30) -> str:
-        cmd = [self.adb] + list(args)
+        cmd = [self.adb]
+        # Add -s flag for device-specific commands (not for server/pair/connect commands)
+        skip_serial = args and args[0] in ("kill-server", "start-server", "pair", "connect", "disconnect", "devices")
+        if self.device_serial and not skip_serial:
+            cmd += ["-s", self.device_serial]
+        cmd += list(args)
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             output = result.stdout.strip()

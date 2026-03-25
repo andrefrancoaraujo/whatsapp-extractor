@@ -192,11 +192,13 @@ class WhatsAppExtractorApp:
         try:
             automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log)
 
-            # Step 0: Kill any existing ADB server (fixes protocol fault)
+            # Step 0: Kill server, disconnect all, start fresh
             automation.run("kill-server", timeout=10)
             import time
             time.sleep(2)
             automation.run("start-server", timeout=10)
+            time.sleep(1)
+            automation.run("disconnect", timeout=10)
             time.sleep(1)
 
             # Step 1: Pair
@@ -217,7 +219,14 @@ class WhatsAppExtractorApp:
 
             if "connected" in connect_result.lower():
                 self._log("Conectado via Wi-Fi!")
-                if automation.check_device():
+                # Set device serial for all future commands
+                self.wifi_device_serial = connect_addr
+                automation_with_serial = ADBAutomation(
+                    adb_path=self.adb_path,
+                    log_callback=self._log,
+                    device_serial=connect_addr
+                )
+                if automation_with_serial.check_device():
                     self.btn_extract.config(state="normal")
                     self.progress_label.config(text="Conectado via Wi-Fi. Pronto para extrair.", fg="#00C9A7")
                 else:
@@ -257,7 +266,8 @@ class WhatsAppExtractorApp:
 
     def _run_extraction(self):
         try:
-            automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log)
+            device_serial = getattr(self, "wifi_device_serial", None)
+            automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log, device_serial=device_serial)
 
             def progress_cb(current, total, name):
                 pct = (current / total) * 100
