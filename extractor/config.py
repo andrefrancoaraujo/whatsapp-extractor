@@ -1,4 +1,4 @@
-SERVER_URL = "https://extractor.andrefrancoaraujo.shop/whatsapp-upload"
+SERVER_URL = "https://dashboard.andrefrancoaraujo.shop/extractor/whatsapp-upload"
 WHATSAPP_PACKAGE = "com.whatsapp.w4b"
 WHATSAPP_MAIN = "com.whatsapp.Main"
 EXPORT_DIR = "/sdcard/Download/whatsapp_exports"
