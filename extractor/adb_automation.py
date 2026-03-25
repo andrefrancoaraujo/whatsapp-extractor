@@ -36,7 +36,13 @@ class ADBAutomation:
         cmd = [self.adb] + list(args)
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-            return result.stdout.strip()
+            output = result.stdout.strip()
+            err = result.stderr.strip()
+            if err:
+                self.log(f"  [adb stderr] {err}")
+            if not output and err:
+                return err
+            return output
         except subprocess.TimeoutExpired:
             raise ADBError(f"Timeout: {' '.join(cmd)}")
         except FileNotFoundError:
