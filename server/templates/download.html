@@ -172,7 +172,7 @@
 
         <div class="download-box">
             <h2>Baixe o Programa</h2>
-            <a href="/download-extractor" class="download-btn">
+            <a href="/extractor/download-extractor" class="download-btn">
                 Baixar WhatsAppExtractor.exe
             </a>
             <p class="download-note">Windows 10/11 - Nao precisa instalar nada, e so abrir</p>
@@ -181,15 +181,14 @@
         <div class="warning">
             <h3>Antes de comecar</h3>
             <p>
-                Voce vai precisar de um <span style="color:#E8B731">cabo USB</span> para conectar
-                o celular no computador. Pode ser o mesmo cabo que usa pra carregar.
+                O celular e o computador precisam estar na <span style="color:#E8B731">mesma rede Wi-Fi</span>.
                 O processo demora entre 30 minutos e 2 horas dependendo da quantidade de conversas.
                 <strong>Nao mexa no celular</strong> enquanto o programa estiver rodando.
             </p>
         </div>
 
         <div class="steps">
-            <h2>Passo a Passo</h2>
+            <h2>Passo a Passo (Conexao Wi-Fi)</h2>
 
             <div class="step">
                 <div class="step-num">1</div>
@@ -197,41 +196,38 @@
                     <h3>Ative o Modo Desenvolvedor no celular</h3>
                     <p>
                         Va em <span class="highlight">Configuracoes</span> >
-                        <span class="highlight">Sobre o telefone</span> e toque
+                        <span class="highlight">Sobre o telefone</span> >
+                        <span class="highlight">Informacoes do software</span> e toque
                         <span class="highlight">7 vezes</span> em
-                        "Numero da versao" ou "Numero de compilacao".
-                        Vai aparecer uma mensagem dizendo "Voce agora e um desenvolvedor".
+                        "Numero da versao". Digite sua senha quando pedir.
+                        Vai aparecer "Voce agora e um desenvolvedor".
                     </p>
-                    <span class="path">Configuracoes > Sobre o telefone > Numero da versao (7x)</span>
+                    <span class="path">Configuracoes > Sobre o telefone > Informacoes do software > Numero da versao (7x)</span>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">2</div>
                 <div class="step-content">
-                    <h3>Ative a Depuracao USB</h3>
+                    <h3>Ative a Depuracao sem fio</h3>
                     <p>
-                        Volte para <span class="highlight">Configuracoes</span>, agora vai ter uma
-                        opcao nova chamada <span class="highlight">Opcoes do desenvolvedor</span>.
-                        Entre nela e ative <span class="highlight">Depuracao USB</span>.
+                        Volte para <span class="highlight">Configuracoes</span> >
+                        <span class="highlight">Opcoes do desenvolvedor</span>.
+                        Ative <span class="highlight">Depuracao sem fio</span> (Wi-Fi debugging).
+                        Se pedir confirmacao, toque em <span class="highlight">Permitir</span>.
                     </p>
-                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao USB: ATIVADO</span>
+                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao sem fio: ATIVADO</span>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">3</div>
                 <div class="step-content">
-                    <h3>Conecte o celular no computador com o cabo USB</h3>
+                    <h3>Anote o IP e porta de conexao</h3>
                     <p>
-                        Quando conectar, vai aparecer uma mensagem no celular perguntando
-                        "Permitir depuracao USB?". Marque a opcao
-                        <span class="highlight">"Sempre permitir deste computador"</span>
-                        e toque em <span class="highlight">OK</span>.
-                    </p>
-                    <p style="margin-top: 8px;">
-                        Se aparecer uma opcao para escolher o modo USB, selecione
-                        <span class="highlight">"Transferencia de arquivos (MTP)"</span>.
+                        Na tela de <span class="highlight">Depuracao sem fio</span>, logo abaixo
+                        do toggle, aparece um <span class="highlight">endereco IP e porta</span>
+                        (ex: 192.168.1.10:43567). Anote esse endereco — voce vai precisar no programa.
                     </p>
                 </div>
             </div>
@@ -239,18 +235,39 @@
             <div class="step">
                 <div class="step-num">4</div>
                 <div class="step-content">
-                    <h3>Abra o programa e clique "Verificar Conexao"</h3>
+                    <h3>Gere o codigo de pareamento</h3>
                     <p>
-                        Abra o arquivo <span class="highlight">WhatsAppExtractor.exe</span> que
-                        voce baixou. Clique no botao verde
-                        <span class="highlight">"Verificar Conexao"</span>.
-                        Se aparecer "Device connected!", esta tudo certo.
+                        Na mesma tela, toque em
+                        <span class="highlight">"Parear dispositivo com codigo de pareamento"</span>.
+                        Vai aparecer um <span class="highlight">codigo de 6 digitos</span> e um
+                        <span class="highlight">IP:porta de pareamento</span> (diferente do anterior).
+                        Anote os dois. <strong>Nao feche essa tela!</strong>
                     </p>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">5</div>
+                <div class="step-content">
+                    <h3>Abra o programa e conecte via Wi-Fi</h3>
+                    <p>
+                        Abra o <span class="highlight">WhatsAppExtractor.exe</span>.
+                        No topo do programa, preencha:
+                    </p>
+                    <p style="margin-top: 6px;">
+                        <span class="highlight">IP e porta de pareamento</span> — o que aparece na tela do codigo (ex: 192.168.1.10:36721)<br>
+                        <span class="highlight">Codigo de pareamento</span> — os 6 digitos (ex: 239249)<br>
+                        <span class="highlight">IP e porta de conexao</span> — o que anotou no passo 3 (ex: 192.168.1.10:43567)
+                    </p>
+                    <p style="margin-top: 6px;">
+                        Clique <span class="highlight">"Conectar via Wi-Fi"</span>.
+                        Se aparecer "Conectado via Wi-Fi!", esta tudo certo.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">6</div>
                 <div class="step-content">
                     <h3>Clique "EXTRAIR TUDO" e aguarde</h3>
                     <p>
@@ -262,7 +279,7 @@
             </div>
 
             <div class="step">
-                <div class="step-num">6</div>
+                <div class="step-num">7</div>
                 <div class="step-content">
                     <h3>Clique "Enviar pro Servidor"</h3>
                     <p>
