@@ -1,0 +1,63 @@
+name: Build Windows .exe
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller requests
+
+      - name: Download ADB platform-tools
+        run: |
+          curl -L -o platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-windows.zip
+          Expand-Archive -Path platform-tools.zip -DestinationPath temp_adb -Force
+          mkdir adb
+          Copy-Item temp_adb\platform-tools\adb.exe adb\
+          Copy-Item temp_adb\platform-tools\AdbWinApi.dll adb\
+          Copy-Item temp_adb\platform-tools\AdbWinUsbApi.dll adb\
+        shell: pwsh
+
+      - name: Build .exe
+        run: |
+          cd extractor
+          pyinstaller --onefile --windowed --name WhatsAppExtractor --add-data "../adb;adb" main.py
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhatsAppExtractor
+          path: extractor/dist/WhatsAppExtractor.exe
+
+      - name: Deploy to VPS
+        if: github.ref == 'refs/heads/master'
+        env:
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          choco install sshpass -y 2>$null
+          # Use scp via PowerShell
+          pip install paramiko
+          python -c "
+          import paramiko
+          ssh = paramiko.SSHClient()
+          ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+          ssh.connect('148.230.77.21', username='root', password='${{ secrets.VPS_PASSWORD }}')
+          sftp = ssh.open_sftp()
+          sftp.put('extractor/dist/WhatsAppExtractor.exe', '/opt/whatsapp-extractor/dist/WhatsAppExtractor.exe')
+          sftp.close()
+          ssh.close()
+          print('Deployed to VPS!')
+          "
+        shell: pwsh

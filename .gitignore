@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+dist/
+build/
+*.spec
+*.exe
+adb/*.exe
+adb/*.dll
+temp_ui/
+exported_chats/
+venv/
+.env
+platform-tools.zip
+temp_adb/

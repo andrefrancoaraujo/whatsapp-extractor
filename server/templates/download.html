@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Extractor - Boost Research</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0D2520;
+            color: #FFFFFF;
+            min-height: 100vh;
+        }
+        .container { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            font-size: 28px;
+            color: #00C9A7;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #AAAAAA;
+            font-size: 14px;
+        }
+
+        .download-box {
+            background: #143D33;
+            border: 2px solid #00C9A7;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .download-box h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+            color: #E8B731;
+        }
+        .download-btn {
+            display: inline-block;
+            background: #00C9A7;
+            color: #0D2520;
+            font-size: 18px;
+            font-weight: 700;
+            padding: 16px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: background 0.2s;
+            cursor: pointer;
+            border: none;
+        }
+        .download-btn:hover { background: #00E6BE; }
+        .download-note {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #AAAAAA;
+        }
+
+        .steps {
+            background: #143D33;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .steps h2 {
+            font-size: 20px;
+            color: #00C9A7;
+            margin-bottom: 20px;
+        }
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 24px;
+            gap: 16px;
+        }
+        .step:last-child { margin-bottom: 0; }
+        .step-num {
+            min-width: 36px;
+            height: 36px;
+            background: #00C9A7;
+            color: #0D2520;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        .step-content h3 {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+        .step-content p {
+            font-size: 14px;
+            color: #CCCCCC;
+            line-height: 1.5;
+        }
+        .step-content .highlight {
+            color: #E8B731;
+            font-weight: 600;
+        }
+        .step-content .path {
+            background: #0A1F1A;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #00C9A7;
+            display: inline-block;
+            margin-top: 4px;
+        }
+
+        .warning {
+            background: #2D1B00;
+            border: 1px solid #E8B731;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .warning h3 {
+            color: #E8B731;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .warning p {
+            font-size: 13px;
+            color: #CCCCCC;
+            line-height: 1.5;
+        }
+
+        .faq {
+            background: #143D33;
+            border-radius: 12px;
+            padding: 30px;
+        }
+        .faq h2 {
+            color: #00C9A7;
+            margin-bottom: 16px;
+        }
+        .faq-item { margin-bottom: 16px; }
+        .faq-item:last-child { margin-bottom: 0; }
+        .faq-item h3 {
+            font-size: 14px;
+            color: #E8B731;
+            margin-bottom: 4px;
+        }
+        .faq-item p {
+            font-size: 13px;
+            color: #CCCCCC;
+            line-height: 1.4;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WhatsApp Business Extractor</h1>
+            <p>Ferramenta para extrair todas as conversas automaticamente</p>
+        </div>
+
+        <div class="download-box">
+            <h2>Baixe o Programa</h2>
+            <a href="/download-extractor" class="download-btn">
+                Baixar WhatsAppExtractor.exe
+            </a>
+            <p class="download-note">Windows 10/11 - Nao precisa instalar nada, e so abrir</p>
+        </div>
+
+        <div class="warning">
+            <h3>Antes de comecar</h3>
+            <p>
+                Voce vai precisar de um <span style="color:#E8B731">cabo USB</span> para conectar
+                o celular no computador. Pode ser o mesmo cabo que usa pra carregar.
+                O processo demora entre 30 minutos e 2 horas dependendo da quantidade de conversas.
+                <strong>Nao mexa no celular</strong> enquanto o programa estiver rodando.
+            </p>
+        </div>
+
+        <div class="steps">
+            <h2>Passo a Passo</h2>
+
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                    <h3>Ative o Modo Desenvolvedor no celular</h3>
+                    <p>
+                        Va em <span class="highlight">Configuracoes</span> >
+                        <span class="highlight">Sobre o telefone</span> e toque
+                        <span class="highlight">7 vezes</span> em
+                        "Numero da versao" ou "Numero de compilacao".
+                        Vai aparecer uma mensagem dizendo "Voce agora e um desenvolvedor".
+                    </p>
+                    <span class="path">Configuracoes > Sobre o telefone > Numero da versao (7x)</span>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                    <h3>Ative a Depuracao USB</h3>
+                    <p>
+                        Volte para <span class="highlight">Configuracoes</span>, agora vai ter uma
+                        opcao nova chamada <span class="highlight">Opcoes do desenvolvedor</span>.
+                        Entre nela e ative <span class="highlight">Depuracao USB</span>.
+                    </p>
+                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao USB: ATIVADO</span>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                    <h3>Conecte o celular no computador com o cabo USB</h3>
+                    <p>
+                        Quando conectar, vai aparecer uma mensagem no celular perguntando
+                        "Permitir depuracao USB?". Marque a opcao
+                        <span class="highlight">"Sempre permitir deste computador"</span>
+                        e toque em <span class="highlight">OK</span>.
+                    </p>
+                    <p style="margin-top: 8px;">
+                        Se aparecer uma opcao para escolher o modo USB, selecione
+                        <span class="highlight">"Transferencia de arquivos (MTP)"</span>.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">4</div>
+                <div class="step-content">
+                    <h3>Abra o programa e clique "Verificar Conexao"</h3>
+                    <p>
+                        Abra o arquivo <span class="highlight">WhatsAppExtractor.exe</span> que
+                        voce baixou. Clique no botao verde
+                        <span class="highlight">"Verificar Conexao"</span>.
+                        Se aparecer "Device connected!", esta tudo certo.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">5</div>
+                <div class="step-content">
+                    <h3>Clique "EXTRAIR TUDO" e aguarde</h3>
+                    <p>
+                        O programa vai abrir o WhatsApp Business no celular e exportar cada conversa
+                        automaticamente. <span class="highlight">Nao mexa no celular</span> durante
+                        o processo. Voce pode acompanhar o progresso na tela do programa.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">6</div>
+                <div class="step-content">
+                    <h3>Clique "Enviar pro Servidor"</h3>
+                    <p>
+                        Quando terminar, clique no botao azul
+                        <span class="highlight">"Enviar pro Servidor"</span>
+                        para enviar todos os arquivos. Pronto!
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="faq">
+            <h2>Perguntas Frequentes</h2>
+
+            <div class="faq-item">
+                <h3>O programa e seguro?</h3>
+                <p>Sim. Ele apenas exporta as conversas do WhatsApp usando a funcao de
+                   exportacao nativa do proprio app. Nao acessa senhas nem dados bancarios.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3>O Windows diz que o arquivo e perigoso</h3>
+                <p>O Windows mostra esse aviso para qualquer programa baixado que nao tem assinatura
+                   digital. Clique em "Mais informacoes" e depois "Executar assim mesmo".</p>
+            </div>
+
+            <div class="faq-item">
+                <h3>Nao encontrou o celular</h3>
+                <p>Verifique se: (1) o cabo USB funciona para dados (nao apenas carga),
+                   (2) "Depuracao USB" esta ativada, (3) voce aceitou a permissao no celular.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3>Posso usar o celular durante a extracao?</h3>
+                <p>Nao. O programa controla a tela do celular automaticamente. Se voce
+                   mexer no celular, a automacao pode errar. Deixe o celular parado.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3>Quanto tempo demora?</h3>
+                <p>Cerca de 1-2 minutos por conversa. Para 100 conversas, entre 1h30 e 3h.</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Boost Research - Ferramenta interna</p>
+        </div>
+    </div>
+</body>
+</html>
