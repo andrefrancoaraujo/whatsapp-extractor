@@ -77,7 +77,7 @@ class WhatsAppExtractorApp:
         self.entry_pair_addr = tk.Entry(row1, font=("Consolas", 11), bg="#0A1F1A", fg="#00C9A7",
                                          insertbackground="#00C9A7", width=25)
         self.entry_pair_addr.pack(side="left", padx=5)
-        self.entry_pair_addr.insert(0, "192.168.15.144:36721")
+        self.entry_pair_addr.insert(0, "")
 
         # Row 2: Pairing code
         row2 = tk.Frame(wifi_frame, bg="#143D33", pady=3)
@@ -188,11 +188,19 @@ class WhatsAppExtractorApp:
             self._log("Preencha tambem o IP:porta de conexao (aparece na tela 'Depuracao sem fio').")
             return
 
-        self._log(f"Pairing with {pair_addr} ...")
+        self._log("Reiniciando ADB server...")
         try:
             automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log)
 
+            # Step 0: Kill any existing ADB server (fixes protocol fault)
+            automation.run("kill-server", timeout=10)
+            import time
+            time.sleep(2)
+            automation.run("start-server", timeout=10)
+            time.sleep(1)
+
             # Step 1: Pair
+            self._log(f"Pairing with {pair_addr} ...")
             pair_result = automation.run("pair", pair_addr, pair_code, timeout=15)
             self._log(f"Pair result: {pair_result}")
 
@@ -202,6 +210,7 @@ class WhatsAppExtractorApp:
                 self._log("Pareamento pode ter falhado. Tentando conectar mesmo assim...")
 
             # Step 2: Connect
+            time.sleep(1)
             self._log(f"Connecting to {connect_addr} ...")
             connect_result = automation.run("connect", connect_addr, timeout=15)
             self._log(f"Connect result: {connect_result}")
