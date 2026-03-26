@@ -278,7 +278,20 @@ class WhatsAppExtractorApp:
                 )
                 self.root.update_idletasks()
 
-            pulled = automation.run_full_export(progress_callback=progress_cb)
+            def batch_cb(batch_num, total_batches):
+                self._log(f"\n>>> Batch {batch_num} de {total_batches}")
+                self.progress_label.config(
+                    text=f"Batch {batch_num}/{total_batches}",
+                    fg="#E8B731"
+                )
+                self.root.update_idletasks()
+
+            pulled = automation.run_full_export(
+                progress_callback=progress_cb,
+                batch_callback=batch_cb,
+                num_batches=5,
+                batch_pause=10
+            )
 
             self._log(f"\n{'='*50}")
             self._log(f"Pronto! {len(pulled)} arquivos extraidos.")

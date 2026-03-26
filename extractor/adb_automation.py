@@ -435,10 +435,32 @@ class ADBAutomation:
 
         return pulled
 
+    # ── Progress tracking ─────────────────────────────────────────
+
+    PROGRESS_FILE = "export_progress.json"
+
+    def _load_progress(self) -> dict:
+        """Load progress from previous runs."""
+        import json
+        if os.path.exists(self.PROGRESS_FILE):
+            try:
+                with open(self.PROGRESS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {"exported": [], "failed": [], "batch_completed": 0}
+
+    def _save_progress(self, progress: dict):
+        """Save progress after each successful export."""
+        import json
+        with open(self.PROGRESS_FILE, "w", encoding="utf-8") as f:
+            json.dump(progress, f, ensure_ascii=False, indent=2)
+
     # ── Main orchestration ──────────────────────────────────────────
 
-    def run_full_export(self, progress_callback=None) -> list[str]:
-        """Run the complete export process."""
+    def run_full_export(self, progress_callback=None, batch_callback=None,
+                        num_batches=5, batch_pause=10) -> list[str]:
+        """Run the complete export process with batch support and resume."""
 
         # 1. Check device
         if not self.check_device():
@@ -447,10 +469,16 @@ class ADBAutomation:
         # 2. Create export directory on device
         self.shell(f"mkdir -p {EXPORT_DIR}")
 
-        # 3. Open WhatsApp Business
+        # 3. Load progress from previous runs
+        progress = self._load_progress()
+        already_exported = set(progress["exported"])
+        if already_exported:
+            self.log(f"Resuming: {len(already_exported)} conversations already exported.")
+
+        # 4. Open WhatsApp Business
         self.open_whatsapp()
 
-        # 4. Collect all conversations
+        # 5. Collect all conversations
         self.log("Scanning conversations...")
         conversations = self.scroll_and_collect_conversations()
         self.log(f"Found {len(conversations)} conversations total.")
@@ -458,42 +486,100 @@ class ADBAutomation:
         if not conversations:
             raise ADBError("No conversations found. Is WhatsApp Business open?")
 
-        # 5. Export each conversation
-        exported = 0
-        failed = []
+        # 6. Filter out already exported
+        pending = [c for c in conversations if c["text"] and c["text"] not in already_exported]
+        self.log(f"Pending: {len(pending)} conversations to export.")
 
-        for i, convo in enumerate(conversations):
-            name = convo["text"]
-            if not name:
-                continue
+        if not pending:
+            self.log("All conversations already exported!")
+            self.log("\nPulling files from phone...")
+            return self.pull_exported_files("exported_chats")
 
-            if progress_callback:
-                progress_callback(i + 1, len(conversations), name)
+        # 7. Divide into batches
+        batch_size = max(1, len(pending) // num_batches + (1 if len(pending) % num_batches else 0))
+        batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
+        self.log(f"Split into {len(batches)} batches of ~{batch_size} conversations each.")
 
-            # Scroll back to top before each export to reset position
-            if i > 0 and i % 10 == 0:
-                self._ensure_chat_list()
-                # Scroll to top
-                for _ in range(20):
-                    x = self.screen_width // 2
-                    y_start = int(self.screen_height * 0.3)
-                    y_end = int(self.screen_height * 0.7)
-                    self.shell(f"input swipe {x} {y_start} {x} {y_end} 150")
-                    time.sleep(0.2)
-                time.sleep(1)
+        total_exported = len(already_exported)
+        total_conversations = len(conversations)
 
-            success = self.export_single_chat(name)
-            if success:
-                exported += 1
-            else:
-                failed.append(name)
+        for batch_idx, batch in enumerate(batches):
+            batch_num = batch_idx + 1
+            self.log(f"\n{'='*50}")
+            self.log(f"BATCH {batch_num}/{len(batches)} — {len(batch)} conversations")
+            self.log(f"{'='*50}")
 
-        self.log(f"\nExport complete: {exported}/{len(conversations)} successful")
-        if failed:
-            self.log(f"Failed: {', '.join(failed)}")
+            if batch_callback:
+                batch_callback(batch_num, len(batches))
 
-        # 6. Pull exported files
-        self.log("\nPulling files from phone...")
+            for i, convo in enumerate(batch):
+                name = convo["text"]
+                if not name:
+                    continue
+
+                if progress_callback:
+                    progress_callback(total_exported + i + 1, total_conversations, name)
+
+                # Scroll back to top every 10 exports to reset position
+                if i > 0 and i % 10 == 0:
+                    self._ensure_chat_list()
+                    self._scroll_to_top()
+
+                try:
+                    success = self.export_single_chat(name)
+                    if success:
+                        progress["exported"].append(name)
+                        self._save_progress(progress)
+                    else:
+                        if name not in progress["failed"]:
+                            progress["failed"].append(name)
+                            self._save_progress(progress)
+                except Exception as e:
+                    self.log(f"  Error exporting {name}: {e}")
+                    if name not in progress["failed"]:
+                        progress["failed"].append(name)
+                        self._save_progress(progress)
+
+            # Update batch counter
+            total_exported += len(batch)
+            progress["batch_completed"] = batch_num
+            self._save_progress(progress)
+
+            # Pull files after each batch
+            self.log(f"\nBatch {batch_num} done. Pulling files...")
+            self.pull_exported_files("exported_chats")
+
+            # Pause between batches (except after last)
+            if batch_idx < len(batches) - 1:
+                self.log(f"Pausing {batch_pause}s before next batch...")
+                time.sleep(batch_pause)
+                # Re-open WhatsApp to ensure clean state
+                self.open_whatsapp()
+                time.sleep(2)
+
+        # 8. Final summary
+        exported_count = len(progress["exported"])
+        failed_count = len(progress["failed"])
+        self.log(f"\n{'='*50}")
+        self.log(f"EXPORT COMPLETE")
+        self.log(f"  Exported: {exported_count}/{total_conversations}")
+        self.log(f"  Failed: {failed_count}")
+        if progress["failed"]:
+            self.log(f"  Failed names: {', '.join(progress['failed'][:20])}")
+        self.log(f"  Progress saved to: {self.PROGRESS_FILE}")
+        self.log(f"{'='*50}")
+
+        # 9. Final pull
+        self.log("\nFinal pull of all files...")
         pulled = self.pull_exported_files("exported_chats")
-
         return pulled
+
+    def _scroll_to_top(self):
+        """Scroll the conversation list back to the top."""
+        for _ in range(20):
+            x = self.screen_width // 2
+            y_start = int(self.screen_height * 0.3)
+            y_end = int(self.screen_height * 0.7)
+            self.shell(f"input swipe {x} {y_start} {x} {y_end} 150")
+            time.sleep(0.2)
+        time.sleep(1)
