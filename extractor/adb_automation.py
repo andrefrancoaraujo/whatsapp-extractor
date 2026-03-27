@@ -132,6 +132,34 @@ class ADBAutomation:
             self.log(f"Screen: {self.screen_width}x{self.screen_height}")
         return True
 
+    def keep_screen_on(self):
+        """Prevent screen from turning off during automation."""
+        self.log("Keeping screen awake...")
+        # Disable screen timeout (set to 30 min = 1800000ms)
+        self.shell("settings put system screen_off_timeout 1800000")
+        # Wake screen if it's off
+        self.wake_screen()
+        # Keep screen on while charging/USB
+        self.shell("svc power stayon true")
+
+    def restore_screen_settings(self):
+        """Restore normal screen timeout after automation."""
+        self.shell("settings put system screen_off_timeout 60000")  # 1 min default
+        self.shell("svc power stayon false")
+
+    def wake_screen(self):
+        """Wake the screen if it's off and unlock if no PIN/pattern."""
+        # Check if screen is on
+        screen_state = self.shell("dumpsys power | grep 'Display Power'")
+        if "state=OFF" in screen_state:
+            self.log("  Screen is OFF, waking up...")
+            self.shell("input keyevent KEYCODE_WAKEUP")
+            time.sleep(1)
+            # Swipe up to dismiss lock screen (works on most phones without PIN)
+            x = self.screen_width // 2
+            self.shell(f"input swipe {x} {int(self.screen_height * 0.8)} {x} {int(self.screen_height * 0.2)} 300")
+            time.sleep(1)
+
     def tap(self, x: int, y: int):
         self.shell(f"input tap {x} {y}")
         time.sleep(TAP_PAUSE)
@@ -576,6 +604,9 @@ class ADBAutomation:
         if not self.check_device():
             raise ADBError("No device connected.")
 
+        # 1b. Keep screen awake and wake if needed
+        self.keep_screen_on()
+
         # 2. Open WhatsApp
         self.open_whatsapp()
 
@@ -630,6 +661,9 @@ class ADBAutomation:
         # 1. Check device
         if not self.check_device():
             raise ADBError("No device connected. Check USB cable and USB debugging.")
+
+        # 1b. Keep screen awake and wake if needed
+        self.keep_screen_on()
 
         # 2. Create export directory on device
         self.shell(f"mkdir -p {EXPORT_DIR}")
