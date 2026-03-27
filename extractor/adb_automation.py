@@ -376,15 +376,32 @@ class ADBAutomation:
             menu_btn = self.find_element(root, resource_id="menu_overflow")
             if not menu_btn:
                 menu_btn = self.find_element(root, resource_id="action_overflow")
+            if not menu_btn:
+                menu_btn = self.find_element(root, resource_id="menuitem_overflow")
         if not menu_btn:
-            # Last fallback: tap top-right corner where menu usually is
+            # Last fallback: tap top-right corner where 3-dot menu is
+            # On most phones: ~40px from right edge, ~150px from top (below status bar)
             self.log("  [fallback] Tapping top-right for menu")
-            menu_btn = {"x": self.screen_width - 60, "y": 80}
+            menu_btn = {"x": self.screen_width - 40, "y": 150}
         self.tap(menu_btn["x"], menu_btn["y"])
 
-        # Step 3: Find "Export chat" (may be nested under "More")
+        # Step 2b: Check if we accidentally opened group info instead of menu
         time.sleep(TAP_PAUSE)
         root = self.dump_ui()
+        if root:
+            # Detect group info screen (has "membros" or "members" text)
+            info_check = self.find_element(root, text_list=["membros", "members", "participantes", "participants"], partial_match=True)
+            if info_check:
+                self.log("  [fix] Opened group info instead of menu, going back and retrying...")
+                diag("step2b_group_info_detected")
+                self.press_back()
+                time.sleep(1)
+                # Retry: tap specifically at the very top-right corner for the 3-dot menu
+                self.tap(self.screen_width - 40, 150)
+                time.sleep(TAP_PAUSE)
+                root = self.dump_ui()
+
+        # Step 3: Find "Export chat" (may be nested under "More")
         if root is None:
             diag("step3_no_ui_dump")
             self.press_back()
@@ -619,12 +636,37 @@ class ADBAutomation:
             self.upload_diagnostics()
             raise ADBError("No conversations found on screen.")
 
-        # Pick the first conversation with a name
+        # Pick the first INDIVIDUAL conversation (skip groups)
+        # Groups often have subtitles like "You, Person1, Person2..." in the desc
         target = None
         for c in convos:
-            if c["text"]:
-                target = c["text"]
+            name = c["text"]
+            if not name:
+                continue
+            # Skip known group patterns
+            desc = c.get("desc", "")
+            # Groups in WA Business show member names or "Grupo" in nearby elements
+            # Prefer conversations that look like phone numbers or individual names
+            # Skip if name contains common group keywords
+            group_keywords = ["geral", "grupo", "team", "equipe", "time", "all", "todos"]
+            is_likely_group = any(kw in name.lower() for kw in group_keywords)
+            if not is_likely_group:
+                target = name
                 break
+
+        # Fallback: if all look like groups, just pick the second one (skip pinned group)
+        if not target:
+            for i, c in enumerate(convos):
+                if c["text"] and i > 0:  # Skip first (likely pinned group)
+                    target = c["text"]
+                    break
+
+        # Last resort: pick first with any name
+        if not target:
+            for c in convos:
+                if c["text"]:
+                    target = c["text"]
+                    break
 
         if not target:
             self.capture_screenshot("test_no_named_conversations")
