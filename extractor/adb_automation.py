@@ -472,12 +472,22 @@ class ADBAutomation:
         return success
 
     def _handle_share_sheet(self, contact_name: str, diagnostic_mode: bool = False) -> bool:
-        """Handle the Android share sheet - save the export file."""
+        """Handle the Android share sheet - save the export file.
+        Based on real Samsung A31 share sheet: Quick Share, WA Business, WA, Bluetooth, Gmail visible.
+        Need to scroll right or find 'Meus Arquivos' / 'Files' or use alternative save methods."""
+
+        def diag(label):
+            if diagnostic_mode:
+                self.capture_screenshot(label)
+                self.capture_ui_dump_diag(label)
+
         root = self.dump_ui()
         if root is None:
             return False
 
-        # Strategy 1: Look for "Files" / "Arquivos" / "Save to" in share sheet
+        diag("share_sheet_initial")
+
+        # Strategy 1: Look for "Files" / "Arquivos" / "Meus Arquivos" directly
         files_btn = self.find_element(
             root,
             text_list=STRINGS["files"],
@@ -485,11 +495,30 @@ class ADBAutomation:
             partial_match=True
         )
 
+        if not files_btn:
+            # Scroll the share sheet icons horizontally to find more options
+            # The share sheet row is typically in the bottom half of the screen
+            y_row = int(self.screen_height * 0.85)
+            for scroll_attempt in range(3):
+                self.shell(f"input swipe {int(self.screen_width * 0.8)} {y_row} {int(self.screen_width * 0.2)} {y_row} 300")
+                time.sleep(0.8)
+                root = self.dump_ui()
+                if root:
+                    files_btn = self.find_element(
+                        root,
+                        text_list=STRINGS["files"],
+                        content_desc_list=STRINGS["files"],
+                        partial_match=True
+                    )
+                    if files_btn:
+                        break
+
         if files_btn:
             self.tap(files_btn["x"], files_btn["y"])
             time.sleep(LOAD_PAUSE)
+            diag("share_files_app")
 
-            # Try to navigate to Downloads folder
+            # Try to navigate to Downloads folder and save
             root = self.dump_ui()
             if root:
                 dl_btn = self.find_element(root, text_list=STRINGS["downloads"], partial_match=True)
@@ -497,44 +526,87 @@ class ADBAutomation:
                     self.tap(dl_btn["x"], dl_btn["y"])
                     time.sleep(TAP_PAUSE)
 
-                # Tap Save button
                 root = self.dump_ui()
                 if root:
                     save_btn = self.find_element(root, text_list=STRINGS["save"])
                     if save_btn:
                         self.tap(save_btn["x"], save_btn["y"])
-                        self.log(f"  Saved: {contact_name}")
+                        self.log(f"  Saved via Files: {contact_name}")
                         return True
 
-        # Strategy 2: Look for Gmail/Email as fallback
-        email_btn = self.find_element(root, text_list=["Gmail", "Email", "E-mail"],
-                                       content_desc_list=["Gmail", "Email"], partial_match=True)
-        if email_btn:
-            self.tap(email_btn["x"], email_btn["y"])
-            time.sleep(LOAD_PAUSE)
-            # Would need to enter email address - skip for now
-            self.log(f"  Gmail found but skipping auto-send for: {contact_name}")
-            self.press_back()
-
-        # Strategy 3: Look for any "Save" or "Download" option
-        root = self.dump_ui()
-        if root:
-            # Scroll the share sheet to find more options
-            self.swipe_up()
+            # If no save button found, try tapping any available confirm button
             root = self.dump_ui()
             if root:
-                save_any = self.find_element(
-                    root,
-                    text_list=["Salvar", "Save", "Download", "Baixar"],
-                    partial_match=True
-                )
-                if save_any:
-                    self.tap(save_any["x"], save_any["y"])
-                    time.sleep(LOAD_PAUSE)
-                    self.log(f"  Saved (fallback): {contact_name}")
-                    return True
+                for text in ["Salvar", "Save", "OK", "Concluído", "Done", "SALVAR"]:
+                    btn = self.find_element(root, text=text)
+                    if btn:
+                        self.tap(btn["x"], btn["y"])
+                        self.log(f"  Saved via Files ({text}): {contact_name}")
+                        return True
 
-        self.log(f"  Could not save export for: {contact_name}")
+        # Strategy 2: Scroll up to reveal "more options" row and look for save/files
+        root = self.dump_ui()
+        if root:
+            # Swipe up on the share sheet to reveal more options
+            self.shell(f"input swipe {self.screen_width // 2} {int(self.screen_height * 0.7)} {self.screen_width // 2} {int(self.screen_height * 0.3)} 300")
+            time.sleep(1)
+            root = self.dump_ui()
+            diag("share_sheet_scrolled_up")
+
+            if root:
+                # Look for save/files options in the expanded view
+                for search_texts in [STRINGS["files"], ["Salvar em", "Save to", "Salvar", "Save"], ["Drive", "Google Drive"]]:
+                    btn = self.find_element(root, text_list=search_texts, content_desc_list=search_texts, partial_match=True)
+                    if btn:
+                        self.tap(btn["x"], btn["y"])
+                        time.sleep(LOAD_PAUSE)
+                        # Try to confirm save
+                        root2 = self.dump_ui()
+                        if root2:
+                            save_btn = self.find_element(root2, text_list=STRINGS["save"])
+                            if save_btn:
+                                self.tap(save_btn["x"], save_btn["y"])
+                        self.log(f"  Saved via expanded share: {contact_name}")
+                        return True
+
+        # Strategy 3: Use Quick Share (Samsung) — saves to Downloads
+        root = self.dump_ui()
+        if root:
+            quick = self.find_element(root, text_list=["Quick Share", "Compartilh. rápido", "Nearby Share", "Compartilhamento"], partial_match=True)
+            if quick:
+                # Quick Share needs a nearby device — skip
+                pass
+
+        # Strategy 4: Use Bluetooth to save (creates file on device)
+        # Skip — too complex
+
+        # Strategy 5: Just press back and the file might already be in cache/temp
+        self.log(f"  [warn] Could not find save option for: {contact_name}")
+        diag("share_sheet_no_save_found")
+
+        # Try the "three dots" or "More" in share sheet for additional options
+        root = self.dump_ui()
+        if root:
+            more = self.find_element(root, text_list=["Mais", "More", "..."], content_desc_list=["Mais", "More"], partial_match=True)
+            if more:
+                self.tap(more["x"], more["y"])
+                time.sleep(1)
+                root = self.dump_ui()
+                diag("share_sheet_more_options")
+                if root:
+                    files_btn = self.find_element(root, text_list=STRINGS["files"], content_desc_list=STRINGS["files"], partial_match=True)
+                    if files_btn:
+                        self.tap(files_btn["x"], files_btn["y"])
+                        time.sleep(LOAD_PAUSE)
+                        root2 = self.dump_ui()
+                        if root2:
+                            save_btn = self.find_element(root2, text_list=STRINGS["save"])
+                            if save_btn:
+                                self.tap(save_btn["x"], save_btn["y"])
+                                self.log(f"  Saved via More > Files: {contact_name}")
+                                return True
+
+        self.log(f"  FAILED to save export for: {contact_name}")
         return False
 
     def _ensure_chat_list(self):
