@@ -131,21 +131,29 @@ class WhatsAppExtractorApp:
         btn_frame = tk.Frame(self.root, bg="#0D2520", pady=5)
         btn_frame.pack(fill="x", padx=15)
 
+        self.btn_test = tk.Button(btn_frame, text="Testar 1 Conversa",
+                                    font=("Segoe UI", 10, "bold"),
+                                    bg="#FF9800", fg="#0D2520",
+                                    command=self._start_test,
+                                    state="disabled",
+                                    width=20, height=1)
+        self.btn_test.pack(side="left", padx=3)
+
         self.btn_extract = tk.Button(btn_frame, text="EXTRAIR TUDO",
                                       font=("Segoe UI", 11, "bold"),
                                       bg="#E8B731", fg="#0D2520",
                                       command=self._start_extraction,
                                       state="disabled",
-                                      width=30, height=1)
-        self.btn_extract.pack(side="left", padx=5)
+                                      width=20, height=1)
+        self.btn_extract.pack(side="left", padx=3)
 
         self.btn_upload = tk.Button(btn_frame, text="Enviar pro Servidor",
                                      font=("Segoe UI", 11, "bold"),
                                      bg="#4A90D9", fg="#FFFFFF",
                                      command=self._upload_files,
                                      state="disabled",
-                                     width=30, height=1)
-        self.btn_upload.pack(side="left", padx=5)
+                                     width=20, height=1)
+        self.btn_upload.pack(side="left", padx=3)
 
         # Progress
         prog_frame = tk.Frame(self.root, bg="#0D2520", pady=3)
@@ -228,6 +236,7 @@ class WhatsAppExtractorApp:
                 )
                 if automation_with_serial.check_device():
                     self.btn_extract.config(state="normal")
+                    self.btn_test.config(state="normal")
                     self.progress_label.config(text="Conectado via Wi-Fi. Pronto para extrair.", fg="#00C9A7")
                 else:
                     self._log("Conectou mas nao encontrou o device. Tente novamente.")
@@ -246,6 +255,7 @@ class WhatsAppExtractorApp:
             if automation.check_device():
                 self._log("Device connected via USB!")
                 self.btn_extract.config(state="normal")
+                self.btn_test.config(state="normal")
                 self.progress_label.config(text="Conectado via USB. Pronto para extrair.", fg="#00C9A7")
             else:
                 self._log("Nenhum dispositivo encontrado. Verifique o cabo e a depuracao USB.")
@@ -254,20 +264,79 @@ class WhatsAppExtractorApp:
             self._log(f"Erro: {e}")
             self.progress_label.config(text="Erro ADB.", fg="#FF4444")
 
+    def _start_test(self):
+        if self.is_running:
+            return
+        self.is_running = True
+        self._disable_all_buttons()
+        thread = threading.Thread(target=self._run_test, daemon=True)
+        thread.start()
+
+    def _run_test(self):
+        try:
+            device_serial = getattr(self, "wifi_device_serial", None)
+            automation = ADBAutomation(
+                adb_path=self.adb_path, log_callback=self._log,
+                device_serial=device_serial, server_url=SERVER_URL
+            )
+
+            def progress_cb(current, total, name):
+                self.progress_label.config(
+                    text=f"Testando: {name}", fg="#FF9800"
+                )
+                self.root.update_idletasks()
+
+            success = automation.run_test_export(progress_callback=progress_cb)
+
+            if success:
+                self.progress_label.config(
+                    text="Teste OK! Pode clicar em EXTRAIR TUDO.", fg="#00C9A7"
+                )
+                self._log("\nTeste deu certo! Clique em EXTRAIR TUDO para exportar todas as conversas.")
+            else:
+                self.progress_label.config(
+                    text="Teste falhou. Diagnosticos enviados.", fg="#FF4444"
+                )
+                self._log("\nTeste falhou. Screenshots de diagnostico foram capturados e enviados.")
+                self._log(f"Screenshots locais em: {os.path.abspath('diagnostics')}")
+
+        except ADBError as e:
+            self._log(f"\nErro: {e}")
+            self.progress_label.config(text="Teste falhou.", fg="#FF4444")
+        except Exception as e:
+            self._log(f"\nErro inesperado: {e}")
+            self.progress_label.config(text="Teste falhou.", fg="#FF4444")
+        finally:
+            self.is_running = False
+            self._enable_all_buttons()
+
+    def _disable_all_buttons(self):
+        self.btn_extract.config(state="disabled")
+        self.btn_test.config(state="disabled")
+        self.btn_check.config(state="disabled")
+        self.btn_wifi.config(state="disabled")
+
+    def _enable_all_buttons(self):
+        self.btn_extract.config(state="normal")
+        self.btn_test.config(state="normal")
+        self.btn_check.config(state="normal")
+        self.btn_wifi.config(state="normal")
+
     def _start_extraction(self):
         if self.is_running:
             return
         self.is_running = True
-        self.btn_extract.config(state="disabled")
-        self.btn_check.config(state="disabled")
-        self.btn_wifi.config(state="disabled")
+        self._disable_all_buttons()
         thread = threading.Thread(target=self._run_extraction, daemon=True)
         thread.start()
 
     def _run_extraction(self):
         try:
             device_serial = getattr(self, "wifi_device_serial", None)
-            automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log, device_serial=device_serial)
+            automation = ADBAutomation(
+                adb_path=self.adb_path, log_callback=self._log,
+                device_serial=device_serial, server_url=SERVER_URL
+            )
 
             def progress_cb(current, total, name):
                 pct = (current / total) * 100
@@ -310,9 +379,7 @@ class WhatsAppExtractorApp:
             self.progress_label.config(text="Extracao falhou.", fg="#FF4444")
         finally:
             self.is_running = False
-            self.btn_extract.config(state="normal")
-            self.btn_check.config(state="normal")
-            self.btn_wifi.config(state="normal")
+            self._enable_all_buttons()
 
     def _upload_files(self):
         if not hasattr(self, "pulled_files") or not self.pulled_files:

@@ -116,6 +116,63 @@ def upload_files():
     })
 
 
+DIAGNOSTICS_DIR = Path("/opt/whatsapp-extractor/diagnostics")
+DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.route("/whatsapp-diagnostics", methods=["POST"])
+def upload_diagnostics():
+    """Receive diagnostic screenshots and UI dumps from the extractor."""
+    if "files" not in request.files:
+        return jsonify({"error": "No files received"}), 400
+
+    files = request.files.getlist("files")
+    saved = []
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    diag_dir = DIAGNOSTICS_DIR / timestamp
+    diag_dir.mkdir(exist_ok=True)
+
+    for f in files:
+        if f.filename:
+            safe_name = f.filename.replace("/", "_").replace("\\", "_")
+            save_path = diag_dir / safe_name
+            f.save(str(save_path))
+            saved.append(safe_name)
+
+    return jsonify({
+        "status": "ok",
+        "count": len(saved),
+        "files": saved,
+        "diagnostic_dir": str(diag_dir),
+    })
+
+
+@app.route("/whatsapp-diagnostics", methods=["GET"])
+def list_diagnostics():
+    """List all diagnostic sessions with their files."""
+    sessions = []
+    if DIAGNOSTICS_DIR.exists():
+        for session_dir in sorted(DIAGNOSTICS_DIR.iterdir(), reverse=True):
+            if session_dir.is_dir():
+                files = sorted([f.name for f in session_dir.iterdir()])
+                sessions.append({
+                    "timestamp": session_dir.name,
+                    "file_count": len(files),
+                    "files": files,
+                    "screenshots": [f for f in files if f.endswith(".png")],
+                    "ui_dumps": [f for f in files if f.endswith(".xml")],
+                })
+    return jsonify({"sessions": sessions})
+
+
+@app.route("/whatsapp-diagnostics/<session>/<filename>")
+def download_diagnostic(session, filename):
+    """Download a specific diagnostic file (screenshot or UI dump)."""
+    session_dir = DIAGNOSTICS_DIR / session
+    return send_from_directory(str(session_dir), filename)
+
+
 @app.route("/whatsapp-data", methods=["GET"])
 def list_data():
     """List all uploaded batches and parsed conversations."""

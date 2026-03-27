@@ -22,14 +22,75 @@ class ADBError(Exception):
 
 
 class ADBAutomation:
-    def __init__(self, adb_path: str = "adb", log_callback=None, device_serial=None):
+    def __init__(self, adb_path: str = "adb", log_callback=None, device_serial=None,
+                 server_url=None):
         self.adb = adb_path
         self.log = log_callback or print
         self.device_serial = device_serial
+        self.server_url = server_url
         self.screen_width = 1080
         self.screen_height = 2340
         self.temp_dir = Path("temp_ui")
         self.temp_dir.mkdir(exist_ok=True)
+        self.screenshots_dir = Path("diagnostics")
+        self.screenshots_dir.mkdir(exist_ok=True)
+        self._diag_counter = 0
+
+    # ── Diagnostics ───────────────────────────────────────────────
+
+    def capture_screenshot(self, label: str = "") -> Optional[str]:
+        """Capture a screenshot from the device and save locally."""
+        try:
+            self._diag_counter += 1
+            safe_label = re.sub(r'[^\w\-]', '_', label)[:50]
+            filename = f"diag_{self._diag_counter:03d}_{safe_label}.png"
+            remote = "/sdcard/diag_screen.png"
+            local_path = str(self.screenshots_dir / filename)
+            self.shell(f"screencap -p {remote}")
+            self.run("pull", remote, local_path)
+            self.shell(f"rm {remote}")
+            return local_path
+        except Exception as e:
+            self.log(f"  [diag] Screenshot failed: {e}")
+            return None
+
+    def capture_ui_dump_diag(self, label: str = "") -> Optional[str]:
+        """Save a copy of the UI dump for diagnostics."""
+        try:
+            safe_label = re.sub(r'[^\w\-]', '_', label)[:50]
+            filename = f"diag_{self._diag_counter:03d}_{safe_label}_ui.xml"
+            local_path = str(self.screenshots_dir / filename)
+            self.shell(f"uiautomator dump {UI_DUMP_PATH}")
+            time.sleep(0.5)
+            self.run("pull", UI_DUMP_PATH, local_path)
+            return local_path
+        except Exception:
+            return None
+
+    def upload_diagnostics(self):
+        """Upload all diagnostic files to the server."""
+        if not self.server_url:
+            return
+        try:
+            import requests
+            diag_files = list(self.screenshots_dir.glob("diag_*"))
+            if not diag_files:
+                self.log("  [diag] No diagnostic files to upload.")
+                return
+            files_to_send = []
+            for f in diag_files:
+                files_to_send.append(
+                    ("files", (f.name, open(f, "rb"), "application/octet-stream"))
+                )
+            url = self.server_url.replace("/whatsapp-upload", "/whatsapp-diagnostics")
+            resp = requests.post(url, files=files_to_send, timeout=60)
+            if resp.status_code == 200:
+                self.log(f"  [diag] {len(diag_files)} diagnostic files uploaded.")
+            else:
+                self.log(f"  [diag] Upload returned HTTP {resp.status_code}")
+        except Exception as e:
+            self.log(f"  [diag] Upload failed: {e}")
+            self.log(f"  [diag] Files saved locally in: {self.screenshots_dir.absolute()}")
 
     # ── ADB primitives ──────────────────────────────────────────────
 
@@ -229,29 +290,44 @@ class ADBAutomation:
         time.sleep(1)
         return list(all_convos.values())
 
-    def export_single_chat(self, contact_name: str) -> bool:
-        """Export a single chat by navigating to it and using the export function."""
+    def export_single_chat(self, contact_name: str, diagnostic_mode: bool = False) -> bool:
+        """Export a single chat by navigating to it and using the export function.
+        In diagnostic_mode, captures screenshots at every step for remote debugging."""
         self.log(f"Exporting: {contact_name}")
+
+        def diag(label):
+            if diagnostic_mode:
+                self.capture_screenshot(label)
+                self.capture_ui_dump_diag(label)
 
         # Step 1: Find and tap the conversation
         root = self.dump_ui()
         if root is None:
+            diag("step1_no_ui_dump")
             return False
+
+        diag("step1_chat_list")
 
         elem = self.find_element(root, text=contact_name)
         if not elem:
+            # Try partial match (WhatsApp sometimes truncates names)
+            elem = self.find_element(root, text_list=[contact_name], partial_match=True)
+        if not elem:
             # Try scrolling to find it
             found = False
-            for _ in range(30):
+            for scroll_i in range(30):
                 self.swipe_up()
                 root = self.dump_ui()
                 if root:
                     elem = self.find_element(root, text=contact_name)
+                    if not elem:
+                        elem = self.find_element(root, text_list=[contact_name], partial_match=True)
                     if elem:
                         found = True
                         break
             if not found:
                 self.log(f"  Could not find conversation: {contact_name}")
+                diag("step1_not_found")
                 return False
 
         self.tap(elem["x"], elem["y"])
@@ -260,34 +336,55 @@ class ADBAutomation:
         # Step 2: Tap 3-dot menu
         root = self.dump_ui()
         if root is None:
+            diag("step2_no_ui_dump")
             self.press_back()
             return False
+
+        diag("step2_inside_chat")
 
         menu_btn = self.find_element(root, content_desc_list=STRINGS["more_options"])
         if not menu_btn:
-            # Fallback: tap top-right corner where menu usually is
+            # Fallback: look by resource-id patterns common in WhatsApp
+            menu_btn = self.find_element(root, resource_id="menu_overflow")
+            if not menu_btn:
+                menu_btn = self.find_element(root, resource_id="action_overflow")
+        if not menu_btn:
+            # Last fallback: tap top-right corner where menu usually is
+            self.log("  [fallback] Tapping top-right for menu")
             menu_btn = {"x": self.screen_width - 60, "y": 80}
         self.tap(menu_btn["x"], menu_btn["y"])
 
-        # Step 3: Tap "Mais" / "More"
+        # Step 3: Find "Export chat" (may be nested under "More")
+        time.sleep(TAP_PAUSE)
         root = self.dump_ui()
         if root is None:
+            diag("step3_no_ui_dump")
             self.press_back()
             self.press_back()
             return False
 
-        # Sometimes "Export chat" is directly in the menu, sometimes under "More"
-        export_btn = self.find_element(root, text_list=STRINGS["export_chat"])
+        diag("step3_menu_open")
+
+        export_btn = self.find_element(root, text_list=STRINGS["export_chat"], partial_match=True)
         if not export_btn:
+            # Try "More" submenu first
             more_btn = self.find_element(root, text_list=STRINGS["more"])
             if more_btn:
                 self.tap(more_btn["x"], more_btn["y"])
+                time.sleep(TAP_PAUSE)
                 root = self.dump_ui()
+                diag("step3_more_submenu")
                 if root:
-                    export_btn = self.find_element(root, text_list=STRINGS["export_chat"])
+                    export_btn = self.find_element(root, text_list=STRINGS["export_chat"], partial_match=True)
+
+        if not export_btn:
+            # Try content-desc as well (some WA versions use it)
+            if root:
+                export_btn = self.find_element(root, content_desc_list=STRINGS["export_chat"], partial_match=True)
 
         if not export_btn:
             self.log(f"  Could not find 'Export chat' for: {contact_name}")
+            diag("step3_export_not_found")
             self.press_back()
             self.press_back()
             return False
@@ -297,14 +394,20 @@ class ADBAutomation:
 
         # Step 4: Tap "Without media"
         root = self.dump_ui()
+        diag("step4_media_choice")
+
         if root:
-            no_media = self.find_element(root, text_list=STRINGS["without_media"])
+            no_media = self.find_element(root, text_list=STRINGS["without_media"], partial_match=True)
             if no_media:
                 self.tap(no_media["x"], no_media["y"])
                 time.sleep(LOAD_PAUSE)
+            else:
+                self.log("  [warn] 'Without media' button not found, trying to continue...")
+                diag("step4_no_media_btn")
 
         # Step 5: Handle share sheet - try to save to Files/Downloads
-        success = self._handle_share_sheet(contact_name)
+        diag("step5_share_sheet")
+        success = self._handle_share_sheet(contact_name, diagnostic_mode)
 
         # Step 6: Go back to chat list
         time.sleep(1)
@@ -318,9 +421,12 @@ class ADBAutomation:
         # Make sure we're back at the chat list
         self._ensure_chat_list()
 
+        if not success:
+            diag("step6_failed_back_to_list")
+
         return success
 
-    def _handle_share_sheet(self, contact_name: str) -> bool:
+    def _handle_share_sheet(self, contact_name: str, diagnostic_mode: bool = False) -> bool:
         """Handle the Android share sheet - save the export file."""
         root = self.dump_ui()
         if root is None:
@@ -455,6 +561,65 @@ class ADBAutomation:
         import json
         with open(self.PROGRESS_FILE, "w", encoding="utf-8") as f:
             json.dump(progress, f, ensure_ascii=False, indent=2)
+
+    # ── Test single export (diagnostic) ─────────────────────────────
+
+    def run_test_export(self, progress_callback=None) -> bool:
+        """Test export of ONE conversation with full diagnostics.
+        Captures screenshots at every step and uploads them to the server."""
+
+        self.log("="*50)
+        self.log("MODO TESTE — Exportando 1 conversa com diagnostico")
+        self.log("="*50)
+
+        # 1. Check device
+        if not self.check_device():
+            raise ADBError("No device connected.")
+
+        # 2. Open WhatsApp
+        self.open_whatsapp()
+
+        # 3. Get first visible conversation
+        self.log("Scanning conversations...")
+        convos = self.get_conversation_names()
+        if not convos:
+            self.capture_screenshot("test_no_conversations")
+            self.capture_ui_dump_diag("test_no_conversations")
+            self.upload_diagnostics()
+            raise ADBError("No conversations found on screen.")
+
+        # Pick the first conversation with a name
+        target = None
+        for c in convos:
+            if c["text"]:
+                target = c["text"]
+                break
+
+        if not target:
+            self.capture_screenshot("test_no_named_conversations")
+            self.upload_diagnostics()
+            raise ADBError("No named conversations found.")
+
+        self.log(f"Testing with: {target}")
+
+        if progress_callback:
+            progress_callback(1, 1, target)
+
+        # 4. Run export with full diagnostics
+        success = self.export_single_chat(target, diagnostic_mode=True)
+
+        # 5. Try to pull files
+        if success:
+            pulled = self.pull_exported_files("exported_chats")
+            self.log(f"\nTEST SUCCESS! Pulled {len(pulled)} file(s).")
+        else:
+            self.log(f"\nTEST FAILED for '{target}'.")
+            self.log("Diagnostic screenshots captured.")
+
+        # 6. Upload diagnostics either way
+        self.upload_diagnostics()
+
+        return success
 
     # ── Main orchestration ──────────────────────────────────────────
 

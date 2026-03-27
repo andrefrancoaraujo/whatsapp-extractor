@@ -5,14 +5,32 @@ EXPORT_DIR = "/sdcard/Download/whatsapp_exports"
 UI_DUMP_PATH = "/sdcard/window_dump.xml"
 
 # Strings PT-BR and EN for UI element matching
+# Multiple variants per action to handle different WA Business versions and Android versions
 STRINGS = {
-    "more_options": ["Mais opções", "More options"],
-    "more": ["Mais", "More"],
-    "export_chat": ["Exportar conversa", "Export chat"],
-    "without_media": ["SEM MÍDIA", "Sem mídia", "WITHOUT MEDIA", "Without media"],
-    "files": ["Arquivos", "Files", "Meus arquivos", "My Files", "Salvar em", "Save to"],
-    "downloads": ["Download", "Downloads"],
-    "save": ["Salvar", "Save", "OK"],
+    "more_options": [
+        "Mais opções", "More options",
+        "Mais opcões", "Mais opcoes",
+        "Menu", "Opções", "Options",
+    ],
+    "more": ["Mais", "More", "Ver mais", "See more"],
+    "export_chat": [
+        "Exportar conversa", "Export chat",
+        "Exportar", "Export",
+        "Exportar histórico", "Exportar historico",
+    ],
+    "without_media": [
+        "SEM MÍDIA", "Sem mídia", "Sem midia",
+        "WITHOUT MEDIA", "Without media", "Without Media",
+        "SEM MEDIA",
+    ],
+    "files": [
+        "Arquivos", "Files", "Meus arquivos", "My Files",
+        "Salvar em", "Save to", "Salvar no dispositivo",
+        "Save to device", "Gerenciador de arquivos", "File Manager",
+        "Meus Arquivos", "Samsung My Files",
+    ],
+    "downloads": ["Download", "Downloads", "Transferências", "Transferencias"],
+    "save": ["Salvar", "Save", "OK", "SALVAR", "SAVE", "Concluído", "Done"],
 }
 
 SCROLL_PAUSE = 1.5
