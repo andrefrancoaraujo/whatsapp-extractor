@@ -8,7 +8,7 @@ import re
 import json
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, redirect
 
 app = Flask(__name__)
 
@@ -207,9 +207,8 @@ def download_parsed(filename):
 
 @app.route("/download-extractor")
 def download_extractor():
-    """Serve the .exe file for download."""
-    exe_dir = "/opt/whatsapp-extractor/dist"
-    return send_from_directory(exe_dir, "WhatsAppExtractor.exe", as_attachment=True)
+    """Redirect to latest GitHub release for download."""
+    return redirect("https://github.com/andrefrancoaraujo/whatsapp-extractor/releases/latest/download/WhatsAppExtractor.exe")
 
 
 if __name__ == "__main__":
