@@ -261,6 +261,35 @@ class ADBAutomation:
                 })
         return results
 
+    # ── Device setup ──────────────────────────────────────────────
+
+    def ensure_file_manager_enabled(self):
+        """Enable file manager apps so they appear in the share sheet.
+        Samsung devices may have My Files disabled or hidden from share targets."""
+        file_managers = [
+            "com.sec.android.app.myfiles",           # Samsung My Files
+            "com.google.android.apps.nbu.files",     # Google Files
+            "com.android.documentsui",               # Android built-in file picker
+        ]
+        enabled_any = False
+        for pkg in file_managers:
+            try:
+                # Check if package exists on device
+                result = self.shell(f"pm list packages {pkg}")
+                if pkg not in result:
+                    continue
+                # Enable it (no-op if already enabled)
+                self.shell(f"pm enable {pkg}")
+                # Also clear any "suspended" state
+                self.shell(f"pm unsuspend {pkg}")
+                self.log(f"  [setup] Enabled file manager: {pkg}")
+                enabled_any = True
+            except Exception:
+                pass
+
+        if not enabled_any:
+            self.log("  [setup] No file manager found on device — share sheet may lack save option")
+
     # ── WhatsApp-specific automation ────────────────────────────────
 
     def open_whatsapp(self):
@@ -696,6 +725,9 @@ class ADBAutomation:
         # 1b. Keep screen awake and wake if needed
         self.keep_screen_on()
 
+        # 1c. Ensure file manager is available in share sheet
+        self.ensure_file_manager_enabled()
+
         # 2. Open WhatsApp
         self.open_whatsapp()
 
@@ -778,6 +810,9 @@ class ADBAutomation:
 
         # 1b. Keep screen awake and wake if needed
         self.keep_screen_on()
+
+        # 1c. Ensure file manager is available in share sheet
+        self.ensure_file_manager_enabled()
 
         # 2. Create export directory on device
         self.shell(f"mkdir -p {EXPORT_DIR}")

@@ -28,6 +28,7 @@ STRINGS = {
         "Salvar em", "Save to", "Salvar no dispositivo",
         "Save to device", "Gerenciador de arquivos", "File Manager",
         "Meus Arquivos", "Samsung My Files",
+        "Documentos", "Documents", "Google Files",
     ],
     "downloads": ["Download", "Downloads", "Transferências", "Transferencias"],
     "save": ["Salvar", "Save", "OK", "SALVAR", "SAVE", "Concluído", "Done"],
