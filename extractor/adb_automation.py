@@ -629,9 +629,9 @@ class ADBAutomation:
         return success
 
     def _handle_share_sheet(self, contact_name: str, diagnostic_mode: bool = False) -> bool:
-        """Handle the export by finding the temp file WhatsApp created.
-        Strategy: dismiss the share sheet and grab the file from WhatsApp's cache/temp,
-        or try to find a file manager in the share sheet as fallback."""
+        """Handle the Android share sheet after WhatsApp export.
+        Uses 6 strategies in order, all attempting to capture the exported .txt
+        WHILE the share sheet is still open (before the temp file is deleted)."""
 
         def diag(label):
             if diagnostic_mode:
@@ -640,7 +640,25 @@ class ADBAutomation:
 
         diag("share_sheet_initial")
 
-        # Strategy 1: Try to find a save option in the share sheet (quick check)
+        safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
+        local_dir = str(Path("exports"))
+        Path(local_dir).mkdir(exist_ok=True)
+        local_path = f"{local_dir}/{safe_name}.txt"
+
+        # ── Strategy 1: Capture content URI WHILE share sheet is open ──
+        # This is the most reliable — WhatsApp exposes the file via content://
+        # and it's still accessible as long as the share sheet is active.
+        self.log(f"  [strategy1] Capturing content URI from share intent...")
+        content_uri = self._capture_content_uri()
+        if content_uri:
+            self.log(f"  Found content URI: {content_uri}")
+            pulled = self._pull_from_content_uri(content_uri, local_path, safe_name)
+            if pulled:
+                self.log(f"  Captured via content URI: {contact_name}")
+                self.press_back()  # dismiss share sheet
+                return True
+
+        # ── Strategy 2: Look for file manager / save option (visible in share sheet) ──
         root = self.dump_ui()
         if root:
             files_btn = self.find_element(
@@ -650,29 +668,207 @@ class ADBAutomation:
                 partial_match=True
             )
             if files_btn:
+                self.log(f"  [strategy2] Found file manager, tapping...")
                 self.tap(files_btn["x"], files_btn["y"])
                 time.sleep(LOAD_PAUSE)
-                root2 = self.dump_ui()
-                if root2:
-                    for text in ["Salvar", "Save", "OK", "SALVAR", "Concluído", "Done"]:
-                        btn = self.find_element(root2, text=text)
-                        if btn:
-                            self.tap(btn["x"], btn["y"])
-                            self.log(f"  Saved via Files: {contact_name}")
-                            return True
-                # If files app opened but no save button, go back
+                saved = self._save_in_file_manager(contact_name)
+                if saved:
+                    return True
                 self.press_back()
                 time.sleep(0.5)
 
-        # Strategy 2: Dismiss share sheet, find the exported .txt in temp/cache
-        self.log(f"  [strategy2] Dismissing share sheet, searching for temp file...")
+        # ── Strategy 3: Scroll share sheet app row to reveal hidden options ──
+        # The bottom row of the share sheet can be scrolled horizontally.
+        self.log(f"  [strategy3] Scrolling share sheet to find more options...")
+        for scroll_attempt in range(3):
+            # Swipe left on the bottom portion of the screen (app row area)
+            # The app row is typically in the bottom ~25% of the screen
+            y_row = int(self.screen_height * 0.85)
+            x_start = int(self.screen_width * 0.8)
+            x_end = int(self.screen_width * 0.2)
+            self.shell(f"input swipe {x_start} {y_row} {x_end} {y_row} 300")
+            time.sleep(0.8)
+
+            root = self.dump_ui()
+            if root:
+                files_btn = self.find_element(
+                    root,
+                    text_list=STRINGS["files"],
+                    content_desc_list=STRINGS["files"],
+                    partial_match=True
+                )
+                if files_btn:
+                    self.log(f"  [strategy3] Found file manager after scroll!")
+                    diag("share_sheet_scrolled_found")
+                    self.tap(files_btn["x"], files_btn["y"])
+                    time.sleep(LOAD_PAUSE)
+                    saved = self._save_in_file_manager(contact_name)
+                    if saved:
+                        return True
+                    self.press_back()
+                    time.sleep(0.5)
+                    break
+
+        # ── Strategy 4: Use "Save to Drive" / OneDrive / Google Drive ──
+        # If no file manager, try cloud storage options visible in the share sheet
+        root = self.dump_ui()
+        if root:
+            cloud_options = [
+                "OneDrive", "Google Drive", "Drive", "Dropbox",
+                "Samsung Cloud", "Nuvem",
+            ]
+            cloud_btn = self.find_element(
+                root,
+                text_list=cloud_options,
+                content_desc_list=cloud_options,
+                partial_match=True
+            )
+            if cloud_btn:
+                self.log(f"  [strategy4] Found cloud option: {cloud_btn.get('text') or cloud_btn.get('desc')}")
+                # Don't actually tap cloud — it would upload but we can't easily retrieve.
+                # Instead, log it and move to next strategy.
+                self.log(f"  [strategy4] Cloud save available but skipping (retrieval complex)")
+
+        # ── Strategy 5: Dismiss share sheet and search for temp file IMMEDIATELY ──
+        self.log(f"  [strategy5] Dismissing share sheet, searching for temp file...")
         diag("share_sheet_dismissing")
 
-        # Dismiss the share sheet
-        self.press_back()
-        time.sleep(1)
+        # Create a timestamp marker file BEFORE dismissing so we can find newer files
+        self.shell('touch /sdcard/.wa_export_marker')
+        time.sleep(0.3)
 
-        # Search for the exported .txt file in common WhatsApp cache/temp locations
+        self.press_back()
+        # Search IMMEDIATELY — don't wait, the file may be deleted quickly
+        time.sleep(0.5)
+
+        found_file = self._search_export_file(contact_name)
+        if found_file:
+            return self._pull_export_file(found_file, local_path, safe_name, contact_name)
+
+        # Wait a bit more and retry (some devices are slower to write)
+        time.sleep(1.5)
+        found_file = self._search_export_file(contact_name)
+        if found_file:
+            return self._pull_export_file(found_file, local_path, safe_name, contact_name)
+
+        # ── Strategy 6: Content URI from activity stack (post-dismiss fallback) ──
+        self.log(f"  [strategy6] Trying content URI from recent activity (post-dismiss)...")
+        content_uri = self._capture_content_uri()
+        if content_uri:
+            pulled = self._pull_from_content_uri(content_uri, local_path, safe_name)
+            if pulled:
+                self.log(f"  Captured via content URI (post-dismiss): {contact_name}")
+                return True
+
+        # Clean up marker
+        self.shell('rm -f /sdcard/.wa_export_marker')
+
+        self.log(f"  FAILED to find export file for: {contact_name}")
+        diag("share_sheet_all_strategies_failed")
+        return False
+
+    def _capture_content_uri(self) -> Optional[str]:
+        """Capture the content:// URI from the current share intent via dumpsys."""
+        try:
+            # Method 1: Check activity top for content URIs
+            result = self.shell(
+                "dumpsys activity top 2>/dev/null | grep -i 'content://' | head -10",
+                timeout=10
+            )
+            if "content://" in result:
+                uris = re.findall(r'content://[^\s"\'\]}>]+', result)
+                for uri in uris:
+                    if "whatsapp" in uri.lower() or "w4b" in uri.lower():
+                        return uri
+                # If no WhatsApp-specific URI, try any that looks like a file export
+                for uri in uris:
+                    if "external" in uri or "file" in uri or "document" in uri:
+                        return uri
+
+            # Method 2: Check recent activities for the share intent
+            result = self.shell(
+                "dumpsys activity activities 2>/dev/null | grep -A5 'android.intent.action.SEND' | grep 'content://' | head -5",
+                timeout=10
+            )
+            if "content://" in result:
+                uris = re.findall(r'content://[^\s"\'\]}>]+', result)
+                for uri in uris:
+                    return uri
+
+            # Method 3: Check via logcat (recent entries only)
+            result = self.shell(
+                "logcat -d -t 30 2>/dev/null | grep -i 'content://' | grep -i 'whatsapp\\|w4b\\|export\\|chat' | tail -5",
+                timeout=10
+            )
+            if "content://" in result:
+                uris = re.findall(r'content://[^\s"\'\]}>]+', result)
+                for uri in uris:
+                    return uri
+
+        except Exception as e:
+            self.log(f"  [content_uri] Error: {e}")
+        return None
+
+    def _pull_from_content_uri(self, uri: str, local_path: str, safe_name: str) -> bool:
+        """Try to read a file from a content:// URI and save it locally."""
+        try:
+            # Method 1: Use content read command
+            content = self.shell(f'content read --uri "{uri}" 2>/dev/null', timeout=15)
+            if content and len(content) > 20:
+                with open(local_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                self.shell(f'mkdir -p {EXPORT_DIR}')
+                self.shell(
+                    f'content read --uri "{uri}" > "{EXPORT_DIR}/{safe_name}.txt" 2>/dev/null'
+                )
+                return True
+
+            # Method 2: Try to copy via content provider to a file on sdcard
+            dest = f"/sdcard/Download/{safe_name}.txt"
+            self.shell(
+                f'content read --uri "{uri}" > "{dest}" 2>/dev/null'
+            )
+            # Check if file was created and has content
+            size_check = self.shell(f'stat -c %s "{dest}" 2>/dev/null')
+            if size_check.strip().isdigit() and int(size_check.strip()) > 20:
+                self.run("pull", dest, local_path)
+                self.shell(f'cp "{dest}" "{EXPORT_DIR}/{safe_name}.txt" 2>/dev/null')
+                self.shell(f'rm -f "{dest}"')
+                return True
+            else:
+                self.shell(f'rm -f "{dest}"')
+
+        except Exception as e:
+            self.log(f"  [content_uri_pull] Error: {e}")
+        return False
+
+    def _save_in_file_manager(self, contact_name: str) -> bool:
+        """Once inside a file manager, try to find and tap Save/OK."""
+        root = self.dump_ui()
+        if not root:
+            return False
+
+        # Look for save/download/OK button
+        save_texts = STRINGS["save"] + STRINGS["downloads"]
+        for text in save_texts:
+            btn = self.find_element(root, text=text)
+            if btn:
+                self.tap(btn["x"], btn["y"])
+                time.sleep(LOAD_PAUSE)
+                # Check if there's a confirmation dialog
+                root2 = self.dump_ui()
+                if root2:
+                    for confirm in ["Salvar", "Save", "OK", "SALVAR", "Concluído", "Done", "Permitir", "Allow"]:
+                        btn2 = self.find_element(root2, text=confirm)
+                        if btn2:
+                            self.tap(btn2["x"], btn2["y"])
+                            time.sleep(1)
+                self.log(f"  Saved via file manager: {contact_name}")
+                return True
+        return False
+
+    def _search_export_file(self, contact_name: str) -> Optional[str]:
+        """Search for the WhatsApp export .txt file on the device."""
         search_paths = [
             "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business/",
             "/sdcard/WhatsApp Business/",
@@ -680,116 +876,82 @@ class ADBAutomation:
             "/sdcard/Download/",
             "/storage/emulated/0/Android/media/com.whatsapp.w4b/",
             "/storage/emulated/0/Documents/",
+            "/storage/emulated/0/Download/",
             "/data/local/tmp/",
+            # WhatsApp internal cache (accessible on some devices)
+            "/sdcard/Android/data/com.whatsapp.w4b/cache/",
+            "/sdcard/Android/media/com.whatsapp.w4b/",
         ]
 
-        # Also search for recently created WhatsApp export files anywhere in /sdcard
-        found_file = None
-
-        # First: look for files matching WhatsApp export naming pattern
-        # WhatsApp exports as "Conversa do WhatsApp com <name>.txt" or "WhatsApp Chat with <name>.txt"
+        # Method 1: Find files newer than our marker
         try:
-            # Search broadly for recent WhatsApp export files (created in the last 2 minutes)
             result = self.shell(
-                'find /sdcard/ -name "*.txt" -newer /sdcard/Android/.nomedia '
-                '-maxdepth 5 2>/dev/null | head -20'
+                'find /sdcard/ -name "*.txt" -newer /sdcard/.wa_export_marker '
+                '-maxdepth 5 2>/dev/null | head -20',
+                timeout=10
             )
-            if not result.strip():
-                # Try alternative: search for WhatsApp export pattern
-                result = self.shell(
-                    'find /sdcard/ /storage/emulated/0/ '
-                    '-name "Conversa*WhatsApp*.txt" -o -name "WhatsApp*Chat*.txt" '
-                    '2>/dev/null | head -20'
-                )
-
             if result.strip():
                 candidates = [f.strip() for f in result.strip().split("\n") if f.strip()]
-                self.log(f"  [strategy2] Found {len(candidates)} candidate files")
+                self.log(f"  [search] Found {len(candidates)} new .txt files")
                 for f in candidates:
                     self.log(f"    {f}")
-                # Pick the most recent / most relevant
                 for f in candidates:
                     if "Conversa" in f or "WhatsApp" in f or "Chat" in f:
-                        found_file = f
-                        break
-                if not found_file and candidates:
-                    found_file = candidates[0]
+                        return f
+                # If none match the pattern but files exist, take the first one
+                if candidates:
+                    return candidates[0]
         except Exception as e:
-            self.log(f"  [strategy2] Search error: {e}")
+            self.log(f"  [search] Find error: {e}")
 
-        # Strategy 3: Check if WhatsApp cached the file in its own directory
-        if not found_file:
-            try:
-                for path in search_paths:
-                    result = self.shell(
-                        f'ls -t "{path}" 2>/dev/null | head -5'
-                    )
-                    if result.strip():
-                        for fname in result.strip().split("\n"):
-                            fname = fname.strip()
-                            if fname.endswith(".txt") and ("Conversa" in fname or "WhatsApp" in fname or "Chat" in fname):
-                                found_file = f"{path}{fname}"
-                                break
-                    if found_file:
-                        break
-            except Exception as e:
-                self.log(f"  [strategy3] Search error: {e}")
-
-        if found_file:
-            self.log(f"  Found export file: {found_file}")
-            # Pull the file to local export directory
-            try:
-                local_dir = str(Path("exports"))
-                Path(local_dir).mkdir(exist_ok=True)
-                safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
-                local_path = f"{local_dir}/{safe_name}.txt"
-                self.run("pull", found_file, local_path)
-                self.log(f"  Pulled to: {local_path}")
-
-                # Also copy to the export dir on device for batch upload later
-                self.shell(f'cp "{found_file}" "{EXPORT_DIR}/{safe_name}.txt" 2>/dev/null')
-
-                # Clean up the temp file
-                self.shell(f'rm -f "{found_file}" 2>/dev/null')
-
-                return True
-            except Exception as e:
-                self.log(f"  Pull failed: {e}")
-                return False
-
-        # Strategy 4: Use adb shell to intercept the content URI from the share intent
-        # The intent data might still be in the activity stack
-        self.log(f"  [strategy4] Trying to capture from recent activity intent...")
+        # Method 2: Search for WhatsApp export naming pattern specifically
         try:
-            # Get the current activity's intent data
-            result = self.shell("dumpsys activity top | grep -i 'content://' | head -5")
-            if "content://" in result:
-                # Extract content URI
-                import re as re_mod
-                uris = re_mod.findall(r'content://[^\s"\']+', result)
-                for uri in uris:
-                    if "whatsapp" in uri.lower():
-                        self.log(f"  Found content URI: {uri}")
-                        # Try to read via content command
-                        local_dir = str(Path("exports"))
-                        Path(local_dir).mkdir(exist_ok=True)
-                        safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
-                        local_path = f"{local_dir}/{safe_name}.txt"
-                        try:
-                            content = self.shell(f'content read --uri "{uri}"')
-                            if content and len(content) > 10:
-                                with open(local_path, "w", encoding="utf-8") as f:
-                                    f.write(content)
-                                self.log(f"  Captured via content URI: {local_path}")
-                                return True
-                        except Exception:
-                            pass
+            result = self.shell(
+                'find /sdcard/ /storage/emulated/0/ '
+                '-name "Conversa*WhatsApp*.txt" -o -name "WhatsApp*Chat*.txt" '
+                '-o -name "Conversa*WhatsApp*Business*.txt" '
+                '2>/dev/null | head -20',
+                timeout=10
+            )
+            if result.strip():
+                candidates = [f.strip() for f in result.strip().split("\n") if f.strip()]
+                if candidates:
+                    self.log(f"  [search] Found export file: {candidates[0]}")
+                    return candidates[0]
         except Exception as e:
-            self.log(f"  [strategy4] Error: {e}")
+            self.log(f"  [search] Pattern search error: {e}")
 
-        self.log(f"  FAILED to find export file for: {contact_name}")
-        diag("share_sheet_all_strategies_failed")
-        return False
+        # Method 3: Check specific directories for recent .txt files
+        for path in search_paths:
+            try:
+                result = self.shell(f'ls -t "{path}" 2>/dev/null | head -5')
+                if result.strip():
+                    for fname in result.strip().split("\n"):
+                        fname = fname.strip()
+                        if fname.endswith(".txt") and (
+                            "Conversa" in fname or "WhatsApp" in fname or "Chat" in fname
+                        ):
+                            return f"{path}{fname}"
+            except Exception:
+                pass
+
+        return None
+
+    def _pull_export_file(self, remote_path: str, local_path: str,
+                          safe_name: str, contact_name: str) -> bool:
+        """Pull an export file from the device to local storage."""
+        try:
+            self.log(f"  Found export file: {remote_path}")
+            self.run("pull", remote_path, local_path)
+            self.log(f"  Pulled to: {local_path}")
+            self.shell(f'mkdir -p {EXPORT_DIR}')
+            self.shell(f'cp "{remote_path}" "{EXPORT_DIR}/{safe_name}.txt" 2>/dev/null')
+            self.shell(f'rm -f "{remote_path}" 2>/dev/null')
+            self.shell('rm -f /sdcard/.wa_export_marker')
+            return True
+        except Exception as e:
+            self.log(f"  Pull failed: {e}")
+            return False
 
     def _ensure_chat_list(self):
         """Make sure we're back at the WhatsApp chat list screen."""
