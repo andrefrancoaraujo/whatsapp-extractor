@@ -171,77 +171,83 @@
         </div>
 
         <div class="download-box">
-            <h2>Baixe o Programa</h2>
+            <h2>Baixe a versao mais recente</h2>
             <a href="https://github.com/andrefrancoaraujo/whatsapp-extractor/releases/latest/download/WhatsAppExtractor.exe" class="download-btn">
                 Baixar WhatsAppExtractor.exe
             </a>
-            <p class="download-note">Windows 10/11 - Nao precisa instalar nada, e so abrir</p>
+            <p class="download-note">Windows 10/11 — Nao precisa instalar nada, e so abrir.<br>
+            Versao atual: v6.0</p>
         </div>
 
         <div class="warning">
             <h3>Antes de comecar</h3>
             <p>
-                O celular e o computador precisam estar na <span style="color:#E8B731">mesma rede Wi-Fi</span>.
+                Voce vai precisar de um <span style="color:#E8B731">cabo USB</span> que transfira dados
+                (nao pode ser cabo so de carga). Conecte o celular no computador pelo cabo.
                 O processo demora entre 30 minutos e 2 horas dependendo da quantidade de conversas.
                 <strong>Nao mexa no celular</strong> enquanto o programa estiver rodando.
             </p>
         </div>
 
         <div class="steps">
-            <h2>Passo a Passo (Conexao Wi-Fi)</h2>
+            <h2>Preparar o celular (so precisa fazer 1 vez)</h2>
 
             <div class="step">
                 <div class="step-num">1</div>
                 <div class="step-content">
-                    <h3>Ative o Modo Desenvolvedor no celular</h3>
+                    <h3>Ative o Modo Desenvolvedor</h3>
                     <p>
-                        Va em <span class="highlight">Configuracoes</span> >
+                        No celular, va em
+                        <span class="highlight">Configuracoes</span> >
                         <span class="highlight">Sobre o telefone</span> >
-                        <span class="highlight">Informacoes do software</span> e toque
-                        <span class="highlight">7 vezes</span> em
-                        "Numero da versao". Digite sua senha quando pedir.
-                        Vai aparecer "Voce agora e um desenvolvedor".
+                        <span class="highlight">Informacoes do software</span>.
+                        Toque <span class="highlight">7 vezes seguidas</span> em
+                        "Numero da versao". Se pedir senha, digite.
+                        Vai aparecer "Voce agora e um desenvolvedor!".
                     </p>
-                    <span class="path">Configuracoes > Sobre o telefone > Informacoes do software > Numero da versao (7x)</span>
+                    <span class="path">Configuracoes > Sobre o telefone > Informacoes do software > Numero da versao (toque 7x)</span>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">2</div>
                 <div class="step-content">
-                    <h3>Ative a Depuracao sem fio</h3>
+                    <h3>Ative a Depuracao USB</h3>
                     <p>
                         Volte para <span class="highlight">Configuracoes</span> >
-                        <span class="highlight">Opcoes do desenvolvedor</span>.
-                        Ative <span class="highlight">Depuracao sem fio</span> (Wi-Fi debugging).
-                        Se pedir confirmacao, toque em <span class="highlight">Permitir</span>.
+                        <span class="highlight">Opcoes do desenvolvedor</span> (apareceu no passo anterior).
+                        Procure <span class="highlight">Depuracao USB</span> e ative.
+                        Se pedir confirmacao, toque em <span class="highlight">OK</span>.
                     </p>
-                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao sem fio: ATIVADO</span>
+                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao USB: ATIVADO</span>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">3</div>
                 <div class="step-content">
-                    <h3>Anote o IP e porta de conexao</h3>
+                    <h3>Conecte o cabo USB e permita acesso</h3>
                     <p>
-                        Na tela de <span class="highlight">Depuracao sem fio</span>, logo abaixo
-                        do toggle, aparece um <span class="highlight">endereco IP e porta</span>
-                        (ex: 192.168.1.10:43567). Anote esse endereco — voce vai precisar no programa.
+                        Conecte o celular no computador pelo cabo USB.
+                        Vai aparecer um aviso no celular perguntando
+                        <span class="highlight">"Permitir depuracao USB?"</span>.
+                        Marque <span class="highlight">"Sempre permitir"</span> e toque em <span class="highlight">OK</span>.
                     </p>
                 </div>
             </div>
+        </div>
+
+        <div class="steps">
+            <h2>Usar o programa</h2>
 
             <div class="step">
                 <div class="step-num">4</div>
                 <div class="step-content">
-                    <h3>Gere o codigo de pareamento</h3>
+                    <h3>Abra o programa e conecte</h3>
                     <p>
-                        Na mesma tela, toque em
-                        <span class="highlight">"Parear dispositivo com codigo de pareamento"</span>.
-                        Vai aparecer um <span class="highlight">codigo de 6 digitos</span> e um
-                        <span class="highlight">IP:porta de pareamento</span> (diferente do anterior).
-                        Anote os dois. <strong>Nao feche essa tela!</strong>
+                        Abra o <span class="highlight">WhatsAppExtractor.exe</span> no computador.
+                        Clique em <span class="highlight">"Conectar USB"</span>.
+                        Deve aparecer "Dispositivo conectado!" na tela.
                     </p>
                 </div>
             </div>
@@ -249,19 +255,14 @@
             <div class="step">
                 <div class="step-num">5</div>
                 <div class="step-content">
-                    <h3>Abra o programa e conecte via Wi-Fi</h3>
+                    <h3>Clique "Diagnosticar" (teste rapido)</h3>
                     <p>
-                        Abra o <span class="highlight">WhatsAppExtractor.exe</span>.
-                        No topo do programa, preencha:
-                    </p>
-                    <p style="margin-top: 6px;">
-                        <span class="highlight">IP e porta de pareamento</span> — o que aparece na tela do codigo (ex: 192.168.1.10:36721)<br>
-                        <span class="highlight">Codigo de pareamento</span> — os 6 digitos (ex: 239249)<br>
-                        <span class="highlight">IP e porta de conexao</span> — o que anotou no passo 3 (ex: 192.168.1.10:43567)
-                    </p>
-                    <p style="margin-top: 6px;">
-                        Clique <span class="highlight">"Conectar via Wi-Fi"</span>.
-                        Se aparecer "Conectado via Wi-Fi!", esta tudo certo.
+                        Antes de extrair tudo, clique em
+                        <span class="highlight">"Diagnosticar"</span>.
+                        O programa faz um teste rapido pra ver se tudo funciona.
+                        Espere ate aparecer o resultado.
+                        Se der <span style="color:#00C9A7">OK</span>, siga pro passo 6.
+                        Se der <span style="color:#FF4444">FALHOU</span>, me mande um print da tela.
                     </p>
                 </div>
             </div>
@@ -269,11 +270,12 @@
             <div class="step">
                 <div class="step-num">6</div>
                 <div class="step-content">
-                    <h3>Clique "EXTRAIR TUDO" e aguarde</h3>
+                    <h3>Clique "Testar 1 Conversa"</h3>
                     <p>
-                        O programa vai abrir o WhatsApp Business no celular e exportar cada conversa
-                        automaticamente. <span class="highlight">Nao mexa no celular</span> durante
-                        o processo. Voce pode acompanhar o progresso na tela do programa.
+                        Clique em <span class="highlight">"Testar 1 Conversa"</span>
+                        para exportar apenas uma conversa como teste.
+                        Se funcionar, siga pro passo 7.
+                        Se nao funcionar, me mande um print da tela.
                     </p>
                 </div>
             </div>
@@ -281,46 +283,105 @@
             <div class="step">
                 <div class="step-num">7</div>
                 <div class="step-content">
+                    <h3>Clique "EXTRAIR TUDO" e aguarde</h3>
+                    <p>
+                        Agora clique em <span class="highlight">"EXTRAIR TUDO"</span>.
+                        O programa vai abrir o WhatsApp Business no celular e exportar cada conversa
+                        automaticamente. <span class="highlight">Nao mexa no celular!</span>
+                        Voce pode acompanhar o progresso na tela do programa.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">8</div>
+                <div class="step-content">
                     <h3>Clique "Enviar pro Servidor"</h3>
                     <p>
-                        Quando terminar, clique no botao azul
-                        <span class="highlight">"Enviar pro Servidor"</span>
-                        para enviar todos os arquivos. Pronto!
+                        Quando terminar, clique no botao
+                        <span class="highlight">"Enviar pro Servidor"</span>.
+                        Pronto! Os arquivos serao enviados automaticamente.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="steps" style="border: 1px solid #E8B731;">
+            <h2 style="color: #E8B731;">Se preferir conexao via Wi-Fi (sem cabo)</h2>
+            <p style="color: #CCCCCC; font-size: 14px; margin-bottom: 16px;">
+                So use esta opcao se nao tiver um cabo USB que transfere dados.
+            </p>
+
+            <div class="step">
+                <div class="step-num">A</div>
+                <div class="step-content">
+                    <h3>Ative a Depuracao sem fio</h3>
+                    <p>
+                        Em <span class="highlight">Opcoes do desenvolvedor</span>,
+                        ative <span class="highlight">Depuracao sem fio</span>.
+                        Anote o <span class="highlight">IP e porta</span> que aparecem abaixo do toggle
+                        (ex: 192.168.1.10:43567).
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">B</div>
+                <div class="step-content">
+                    <h3>Gere o codigo de pareamento</h3>
+                    <p>
+                        Toque em <span class="highlight">"Parear dispositivo com codigo"</span>.
+                        Anote o <span class="highlight">codigo de 6 digitos</span> e o
+                        <span class="highlight">IP:porta de pareamento</span> (diferente do anterior).
+                        <strong>Nao feche essa tela!</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">C</div>
+                <div class="step-content">
+                    <h3>Preencha no programa e conecte</h3>
+                    <p>
+                        No programa, preencha os 3 campos (IP de pareamento, codigo, IP de conexao)
+                        e clique <span class="highlight">"Conectar via Wi-Fi"</span>.
+                        Depois siga os passos 5 a 8 normalmente.
                     </p>
                 </div>
             </div>
         </div>
 
         <div class="faq">
-            <h2>Perguntas Frequentes</h2>
-
-            <div class="faq-item">
-                <h3>O programa e seguro?</h3>
-                <p>Sim. Ele apenas exporta as conversas do WhatsApp usando a funcao de
-                   exportacao nativa do proprio app. Nao acessa senhas nem dados bancarios.</p>
-            </div>
+            <h2>Problemas comuns</h2>
 
             <div class="faq-item">
                 <h3>O Windows diz que o arquivo e perigoso</h3>
-                <p>O Windows mostra esse aviso para qualquer programa baixado que nao tem assinatura
-                   digital. Clique em "Mais informacoes" e depois "Executar assim mesmo".</p>
+                <p>Normal. O Windows mostra esse aviso pra qualquer programa baixado.
+                   Clique em <strong>"Mais informacoes"</strong> e depois <strong>"Executar assim mesmo"</strong>.</p>
             </div>
 
             <div class="faq-item">
-                <h3>Nao encontrou o celular</h3>
-                <p>Verifique se: (1) o cabo USB funciona para dados (nao apenas carga),
-                   (2) "Depuracao USB" esta ativada, (3) voce aceitou a permissao no celular.</p>
+                <h3>"Nenhum dispositivo encontrado"</h3>
+                <p>Verifique se: (1) o cabo USB funciona pra transferir dados (testa plugando e vendo se aparece
+                   "Transferir arquivos" no celular), (2) "Depuracao USB" esta ativada,
+                   (3) voce aceitou a permissao "Permitir depuracao USB" no celular.</p>
             </div>
 
             <div class="faq-item">
                 <h3>Posso usar o celular durante a extracao?</h3>
-                <p>Nao. O programa controla a tela do celular automaticamente. Se voce
-                   mexer no celular, a automacao pode errar. Deixe o celular parado.</p>
+                <p><strong>Nao.</strong> O programa controla a tela do celular automaticamente.
+                   Se voce mexer, a automacao vai errar. Deixe o celular parado.</p>
             </div>
 
             <div class="faq-item">
                 <h3>Quanto tempo demora?</h3>
-                <p>Cerca de 1-2 minutos por conversa. Para 100 conversas, entre 1h30 e 3h.</p>
+                <p>Cerca de 1-2 minutos por conversa. 100 conversas = 1h30 a 3h.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3>O programa e seguro?</h3>
+                <p>Sim. Ele usa a funcao de exportacao nativa do proprio WhatsApp.
+                   Nao acessa senhas, fotos, nem dados bancarios.</p>
             </div>
         </div>
 
