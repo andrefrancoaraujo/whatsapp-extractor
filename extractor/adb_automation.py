@@ -290,6 +290,134 @@ class ADBAutomation:
         if not enabled_any:
             self.log("  [setup] No file manager found on device — share sheet may lack save option")
 
+    def check_file_managers(self) -> dict:
+        """Check which file manager apps are installed on the device."""
+        file_managers = {
+            "com.sec.android.app.myfiles": "Samsung My Files",
+            "com.google.android.apps.nbu.files": "Google Files",
+            "com.android.documentsui": "Android Documents UI",
+            "com.google.android.documentsui": "Google Documents UI",
+            "com.mi.android.globalFileexplorer": "Xiaomi File Manager",
+        }
+        results = {}
+        for pkg, name in file_managers.items():
+            try:
+                result = self.shell(f"pm list packages {pkg}")
+                installed = pkg in result
+                if installed:
+                    # Check if enabled
+                    dump = self.shell(f"pm dump {pkg} | grep 'enabled='")
+                    enabled = "enabled=true" in dump.lower() or "enabled=0" in dump
+                    results[name] = {"installed": True, "enabled": enabled, "package": pkg}
+                else:
+                    results[name] = {"installed": False, "enabled": False, "package": pkg}
+            except Exception:
+                results[name] = {"installed": False, "enabled": False, "package": pkg}
+        return results
+
+    def diagnose_share_sheet(self) -> bool:
+        """Test ONLY the share sheet without exporting a real conversation.
+        Creates a dummy .txt file on device, triggers Android share intent,
+        captures the share sheet, and checks if a file manager is available."""
+
+        self.log("=" * 50)
+        self.log("DIAGNÓSTICO DO SHARE SHEET")
+        self.log("=" * 50)
+
+        # 1. Check device
+        if not self.check_device():
+            raise ADBError("No device connected.")
+
+        self.keep_screen_on()
+
+        # 2. Check installed file managers
+        self.log("\n[1/4] Verificando file managers instalados...")
+        fm_results = self.check_file_managers()
+        any_installed = False
+        for name, info in fm_results.items():
+            status = "INSTALADO" if info["installed"] else "não encontrado"
+            if info["installed"]:
+                status += " + ATIVO" if info["enabled"] else " + DESATIVADO"
+                any_installed = True
+            self.log(f"  {name}: {status}")
+
+        if not any_installed:
+            self.log("\n  ⚠ NENHUM file manager encontrado!")
+            self.log("  → Instale o Google Files: https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files")
+            self.log("  → Depois rode este diagnóstico novamente.")
+            return False
+
+        # 3. Try to enable file managers
+        self.log("\n[2/4] Habilitando file managers...")
+        self.ensure_file_manager_enabled()
+
+        # 4. Create a test file and open share sheet
+        self.log("\n[3/4] Criando arquivo de teste e abrindo share sheet...")
+        test_file = "/sdcard/Download/share_test_boost.txt"
+        self.shell(f'echo "Teste de compartilhamento - Boost Research" > {test_file}')
+        time.sleep(0.5)
+
+        # Open Android share intent for the test file
+        self.shell(
+            f'am start -a android.intent.action.SEND -t text/plain '
+            f'--eu android.intent.extra.STREAM file://{test_file} '
+            f'-c android.intent.category.DEFAULT'
+        )
+        time.sleep(LOAD_PAUSE + 1)
+
+        # Capture screenshot
+        self.capture_screenshot("share_sheet_diagnostic")
+        self.capture_ui_dump_diag("share_sheet_diagnostic")
+
+        # 5. Check if any file manager option is visible
+        self.log("\n[4/4] Procurando opção de salvar no share sheet...")
+        root = self.dump_ui()
+        found_save = False
+        if root:
+            from config import STRINGS
+            files_btn = self.find_element(
+                root,
+                text_list=STRINGS["files"],
+                content_desc_list=STRINGS["files"],
+                partial_match=True
+            )
+            if files_btn:
+                found_save = True
+                self.log(f"  ✓ ENCONTRADO: opção de salvar em arquivo!")
+            else:
+                self.log(f"  ✗ NÃO ENCONTRADO no share sheet.")
+
+                # List what IS in the share sheet for debugging
+                self.log("  Apps visíveis no share sheet:")
+                if root is not None:
+                    for elem in root.iter("node"):
+                        text = elem.get("text", "").strip()
+                        desc = elem.get("content-desc", "").strip()
+                        cls = elem.get("class", "")
+                        if text and "android.widget.TextView" in cls:
+                            self.log(f"    - {text}")
+                        elif desc and not text:
+                            self.log(f"    - [{desc}]")
+
+        # Clean up
+        self.press_back()
+        self.press_back()
+        self.shell(f"rm -f {test_file}")
+
+        if found_save:
+            self.log("\n✓ DIAGNÓSTICO OK — Share sheet tem opção de salvar.")
+            self.log("  Pode rodar 'Testar 1 Conversa' com segurança.")
+        else:
+            self.log("\n✗ DIAGNÓSTICO FALHOU — Share sheet NÃO tem opção de salvar.")
+            self.log("  SOLUÇÃO: Instale o Google Files no celular:")
+            self.log("  https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files")
+            self.log("  Depois rode este diagnóstico novamente.")
+
+        # Upload diagnostics
+        self.upload_diagnostics()
+
+        return found_save
+
     # ── WhatsApp-specific automation ────────────────────────────────
 
     def open_whatsapp(self):

@@ -131,6 +131,14 @@ class WhatsAppExtractorApp:
         btn_frame = tk.Frame(self.root, bg="#0D2520", pady=5)
         btn_frame.pack(fill="x", padx=15)
 
+        self.btn_diag = tk.Button(btn_frame, text="Diagnosticar",
+                                    font=("Segoe UI", 10, "bold"),
+                                    bg="#8B5CF6", fg="#FFFFFF",
+                                    command=self._start_diagnose,
+                                    state="disabled",
+                                    width=14, height=1)
+        self.btn_diag.pack(side="left", padx=3)
+
         self.btn_test = tk.Button(btn_frame, text="Testar 1 Conversa",
                                     font=("Segoe UI", 10, "bold"),
                                     bg="#FF9800", fg="#0D2520",
@@ -237,7 +245,8 @@ class WhatsAppExtractorApp:
                 if automation_with_serial.check_device():
                     self.btn_extract.config(state="normal")
                     self.btn_test.config(state="normal")
-                    self.progress_label.config(text="Conectado via Wi-Fi. Pronto para extrair.", fg="#00C9A7")
+                    self.btn_diag.config(state="normal")
+                    self.progress_label.config(text="Conectado via Wi-Fi. Rode o Diagnóstico primeiro.", fg="#00C9A7")
                 else:
                     self._log("Conectou mas nao encontrou o device. Tente novamente.")
             else:
@@ -256,13 +265,56 @@ class WhatsAppExtractorApp:
                 self._log("Device connected via USB!")
                 self.btn_extract.config(state="normal")
                 self.btn_test.config(state="normal")
-                self.progress_label.config(text="Conectado via USB. Pronto para extrair.", fg="#00C9A7")
+                self.btn_diag.config(state="normal")
+                self.progress_label.config(text="Conectado via USB. Rode o Diagnóstico primeiro.", fg="#00C9A7")
             else:
                 self._log("Nenhum dispositivo encontrado. Verifique o cabo e a depuracao USB.")
                 self.progress_label.config(text="Dispositivo nao encontrado.", fg="#FF4444")
         except ADBError as e:
             self._log(f"Erro: {e}")
             self.progress_label.config(text="Erro ADB.", fg="#FF4444")
+
+    def _start_diagnose(self):
+        if self.is_running:
+            return
+        self.is_running = True
+        self._disable_all_buttons()
+        thread = threading.Thread(target=self._run_diagnose, daemon=True)
+        thread.start()
+
+    def _run_diagnose(self):
+        try:
+            device_serial = getattr(self, "wifi_device_serial", None)
+            automation = ADBAutomation(
+                adb_path=self.adb_path, log_callback=self._log,
+                device_serial=device_serial, server_url=SERVER_URL
+            )
+
+            self.progress_label.config(
+                text="Diagnosticando share sheet...", fg="#8B5CF6"
+            )
+            self.root.update_idletasks()
+
+            success = automation.diagnose_share_sheet()
+
+            if success:
+                self.progress_label.config(
+                    text="Diagnóstico OK! Pode testar 1 conversa.", fg="#00C9A7"
+                )
+            else:
+                self.progress_label.config(
+                    text="Share sheet sem opção de salvar. Instale Google Files.", fg="#FF4444"
+                )
+
+        except ADBError as e:
+            self._log(f"\nErro: {e}")
+            self.progress_label.config(text="Diagnóstico falhou.", fg="#FF4444")
+        except Exception as e:
+            self._log(f"\nErro inesperado: {e}")
+            self.progress_label.config(text="Diagnóstico falhou.", fg="#FF4444")
+        finally:
+            self.is_running = False
+            self._enable_all_buttons()
 
     def _start_test(self):
         if self.is_running:
@@ -313,12 +365,14 @@ class WhatsAppExtractorApp:
     def _disable_all_buttons(self):
         self.btn_extract.config(state="disabled")
         self.btn_test.config(state="disabled")
+        self.btn_diag.config(state="disabled")
         self.btn_check.config(state="disabled")
         self.btn_wifi.config(state="disabled")
 
     def _enable_all_buttons(self):
         self.btn_extract.config(state="normal")
         self.btn_test.config(state="normal")
+        self.btn_diag.config(state="normal")
         self.btn_check.config(state="normal")
         self.btn_wifi.config(state="normal")
 
