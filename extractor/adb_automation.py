@@ -629,141 +629,166 @@ class ADBAutomation:
         return success
 
     def _handle_share_sheet(self, contact_name: str, diagnostic_mode: bool = False) -> bool:
-        """Handle the Android share sheet - save the export file.
-        Based on real Samsung A31 share sheet: Quick Share, WA Business, WA, Bluetooth, Gmail visible.
-        Need to scroll right or find 'Meus Arquivos' / 'Files' or use alternative save methods."""
+        """Handle the export by finding the temp file WhatsApp created.
+        Strategy: dismiss the share sheet and grab the file from WhatsApp's cache/temp,
+        or try to find a file manager in the share sheet as fallback."""
 
         def diag(label):
             if diagnostic_mode:
                 self.capture_screenshot(label)
                 self.capture_ui_dump_diag(label)
 
-        root = self.dump_ui()
-        if root is None:
-            return False
-
         diag("share_sheet_initial")
 
-        # Strategy 1: Look for "Files" / "Arquivos" / "Meus Arquivos" directly
-        files_btn = self.find_element(
-            root,
-            text_list=STRINGS["files"],
-            content_desc_list=STRINGS["files"],
-            partial_match=True
-        )
+        # Strategy 1: Try to find a save option in the share sheet (quick check)
+        root = self.dump_ui()
+        if root:
+            files_btn = self.find_element(
+                root,
+                text_list=STRINGS["files"],
+                content_desc_list=STRINGS["files"],
+                partial_match=True
+            )
+            if files_btn:
+                self.tap(files_btn["x"], files_btn["y"])
+                time.sleep(LOAD_PAUSE)
+                root2 = self.dump_ui()
+                if root2:
+                    for text in ["Salvar", "Save", "OK", "SALVAR", "Concluído", "Done"]:
+                        btn = self.find_element(root2, text=text)
+                        if btn:
+                            self.tap(btn["x"], btn["y"])
+                            self.log(f"  Saved via Files: {contact_name}")
+                            return True
+                # If files app opened but no save button, go back
+                self.press_back()
+                time.sleep(0.5)
 
-        if not files_btn:
-            # Scroll the share sheet icons horizontally to find more options
-            # The share sheet row is typically in the bottom half of the screen
-            y_row = int(self.screen_height * 0.85)
-            for scroll_attempt in range(3):
-                self.shell(f"input swipe {int(self.screen_width * 0.8)} {y_row} {int(self.screen_width * 0.2)} {y_row} 300")
-                time.sleep(0.8)
-                root = self.dump_ui()
-                if root:
-                    files_btn = self.find_element(
-                        root,
-                        text_list=STRINGS["files"],
-                        content_desc_list=STRINGS["files"],
-                        partial_match=True
-                    )
-                    if files_btn:
+        # Strategy 2: Dismiss share sheet, find the exported .txt in temp/cache
+        self.log(f"  [strategy2] Dismissing share sheet, searching for temp file...")
+        diag("share_sheet_dismissing")
+
+        # Dismiss the share sheet
+        self.press_back()
+        time.sleep(1)
+
+        # Search for the exported .txt file in common WhatsApp cache/temp locations
+        search_paths = [
+            "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business/",
+            "/sdcard/WhatsApp Business/",
+            "/sdcard/Documents/",
+            "/sdcard/Download/",
+            "/storage/emulated/0/Android/media/com.whatsapp.w4b/",
+            "/storage/emulated/0/Documents/",
+            "/data/local/tmp/",
+        ]
+
+        # Also search for recently created WhatsApp export files anywhere in /sdcard
+        found_file = None
+
+        # First: look for files matching WhatsApp export naming pattern
+        # WhatsApp exports as "Conversa do WhatsApp com <name>.txt" or "WhatsApp Chat with <name>.txt"
+        try:
+            # Search broadly for recent WhatsApp export files (created in the last 2 minutes)
+            result = self.shell(
+                'find /sdcard/ -name "*.txt" -newer /sdcard/Android/.nomedia '
+                '-maxdepth 5 2>/dev/null | head -20'
+            )
+            if not result.strip():
+                # Try alternative: search for WhatsApp export pattern
+                result = self.shell(
+                    'find /sdcard/ /storage/emulated/0/ '
+                    '-name "Conversa*WhatsApp*.txt" -o -name "WhatsApp*Chat*.txt" '
+                    '2>/dev/null | head -20'
+                )
+
+            if result.strip():
+                candidates = [f.strip() for f in result.strip().split("\n") if f.strip()]
+                self.log(f"  [strategy2] Found {len(candidates)} candidate files")
+                for f in candidates:
+                    self.log(f"    {f}")
+                # Pick the most recent / most relevant
+                for f in candidates:
+                    if "Conversa" in f or "WhatsApp" in f or "Chat" in f:
+                        found_file = f
                         break
+                if not found_file and candidates:
+                    found_file = candidates[0]
+        except Exception as e:
+            self.log(f"  [strategy2] Search error: {e}")
 
-        if files_btn:
-            self.tap(files_btn["x"], files_btn["y"])
-            time.sleep(LOAD_PAUSE)
-            diag("share_files_app")
+        # Strategy 3: Check if WhatsApp cached the file in its own directory
+        if not found_file:
+            try:
+                for path in search_paths:
+                    result = self.shell(
+                        f'ls -t "{path}" 2>/dev/null | head -5'
+                    )
+                    if result.strip():
+                        for fname in result.strip().split("\n"):
+                            fname = fname.strip()
+                            if fname.endswith(".txt") and ("Conversa" in fname or "WhatsApp" in fname or "Chat" in fname):
+                                found_file = f"{path}{fname}"
+                                break
+                    if found_file:
+                        break
+            except Exception as e:
+                self.log(f"  [strategy3] Search error: {e}")
 
-            # Try to navigate to Downloads folder and save
-            root = self.dump_ui()
-            if root:
-                dl_btn = self.find_element(root, text_list=STRINGS["downloads"], partial_match=True)
-                if dl_btn:
-                    self.tap(dl_btn["x"], dl_btn["y"])
-                    time.sleep(TAP_PAUSE)
+        if found_file:
+            self.log(f"  Found export file: {found_file}")
+            # Pull the file to local export directory
+            try:
+                local_dir = str(Path("exports"))
+                Path(local_dir).mkdir(exist_ok=True)
+                safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
+                local_path = f"{local_dir}/{safe_name}.txt"
+                self.run("pull", found_file, local_path)
+                self.log(f"  Pulled to: {local_path}")
 
-                root = self.dump_ui()
-                if root:
-                    save_btn = self.find_element(root, text_list=STRINGS["save"])
-                    if save_btn:
-                        self.tap(save_btn["x"], save_btn["y"])
-                        self.log(f"  Saved via Files: {contact_name}")
-                        return True
+                # Also copy to the export dir on device for batch upload later
+                self.shell(f'cp "{found_file}" "{EXPORT_DIR}/{safe_name}.txt" 2>/dev/null')
 
-            # If no save button found, try tapping any available confirm button
-            root = self.dump_ui()
-            if root:
-                for text in ["Salvar", "Save", "OK", "Concluído", "Done", "SALVAR"]:
-                    btn = self.find_element(root, text=text)
-                    if btn:
-                        self.tap(btn["x"], btn["y"])
-                        self.log(f"  Saved via Files ({text}): {contact_name}")
-                        return True
+                # Clean up the temp file
+                self.shell(f'rm -f "{found_file}" 2>/dev/null')
 
-        # Strategy 2: Scroll up to reveal "more options" row and look for save/files
-        root = self.dump_ui()
-        if root:
-            # Swipe up on the share sheet to reveal more options
-            self.shell(f"input swipe {self.screen_width // 2} {int(self.screen_height * 0.7)} {self.screen_width // 2} {int(self.screen_height * 0.3)} 300")
-            time.sleep(1)
-            root = self.dump_ui()
-            diag("share_sheet_scrolled_up")
+                return True
+            except Exception as e:
+                self.log(f"  Pull failed: {e}")
+                return False
 
-            if root:
-                # Look for save/files options in the expanded view
-                for search_texts in [STRINGS["files"], ["Salvar em", "Save to", "Salvar", "Save"], ["Drive", "Google Drive"]]:
-                    btn = self.find_element(root, text_list=search_texts, content_desc_list=search_texts, partial_match=True)
-                    if btn:
-                        self.tap(btn["x"], btn["y"])
-                        time.sleep(LOAD_PAUSE)
-                        # Try to confirm save
-                        root2 = self.dump_ui()
-                        if root2:
-                            save_btn = self.find_element(root2, text_list=STRINGS["save"])
-                            if save_btn:
-                                self.tap(save_btn["x"], save_btn["y"])
-                        self.log(f"  Saved via expanded share: {contact_name}")
-                        return True
-
-        # Strategy 3: Use Quick Share (Samsung) — saves to Downloads
-        root = self.dump_ui()
-        if root:
-            quick = self.find_element(root, text_list=["Quick Share", "Compartilh. rápido", "Nearby Share", "Compartilhamento"], partial_match=True)
-            if quick:
-                # Quick Share needs a nearby device — skip
-                pass
-
-        # Strategy 4: Use Bluetooth to save (creates file on device)
-        # Skip — too complex
-
-        # Strategy 5: Just press back and the file might already be in cache/temp
-        self.log(f"  [warn] Could not find save option for: {contact_name}")
-        diag("share_sheet_no_save_found")
-
-        # Try the "three dots" or "More" in share sheet for additional options
-        root = self.dump_ui()
-        if root:
-            more = self.find_element(root, text_list=["Mais", "More", "..."], content_desc_list=["Mais", "More"], partial_match=True)
-            if more:
-                self.tap(more["x"], more["y"])
-                time.sleep(1)
-                root = self.dump_ui()
-                diag("share_sheet_more_options")
-                if root:
-                    files_btn = self.find_element(root, text_list=STRINGS["files"], content_desc_list=STRINGS["files"], partial_match=True)
-                    if files_btn:
-                        self.tap(files_btn["x"], files_btn["y"])
-                        time.sleep(LOAD_PAUSE)
-                        root2 = self.dump_ui()
-                        if root2:
-                            save_btn = self.find_element(root2, text_list=STRINGS["save"])
-                            if save_btn:
-                                self.tap(save_btn["x"], save_btn["y"])
-                                self.log(f"  Saved via More > Files: {contact_name}")
+        # Strategy 4: Use adb shell to intercept the content URI from the share intent
+        # The intent data might still be in the activity stack
+        self.log(f"  [strategy4] Trying to capture from recent activity intent...")
+        try:
+            # Get the current activity's intent data
+            result = self.shell("dumpsys activity top | grep -i 'content://' | head -5")
+            if "content://" in result:
+                # Extract content URI
+                import re as re_mod
+                uris = re_mod.findall(r'content://[^\s"\']+', result)
+                for uri in uris:
+                    if "whatsapp" in uri.lower():
+                        self.log(f"  Found content URI: {uri}")
+                        # Try to read via content command
+                        local_dir = str(Path("exports"))
+                        Path(local_dir).mkdir(exist_ok=True)
+                        safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
+                        local_path = f"{local_dir}/{safe_name}.txt"
+                        try:
+                            content = self.shell(f'content read --uri "{uri}"')
+                            if content and len(content) > 10:
+                                with open(local_path, "w", encoding="utf-8") as f:
+                                    f.write(content)
+                                self.log(f"  Captured via content URI: {local_path}")
                                 return True
+                        except Exception:
+                            pass
+        except Exception as e:
+            self.log(f"  [strategy4] Error: {e}")
 
-        self.log(f"  FAILED to save export for: {contact_name}")
+        self.log(f"  FAILED to find export file for: {contact_name}")
+        diag("share_sheet_all_strategies_failed")
         return False
 
     def _ensure_chat_list(self):
