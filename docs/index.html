@@ -182,8 +182,7 @@
         <div class="warning">
             <h3>Antes de comecar</h3>
             <p>
-                Voce vai precisar de um <span style="color:#E8B731">cabo USB</span> que transfira dados
-                (nao pode ser cabo so de carga). Conecte o celular no computador pelo cabo.
+                O celular e o computador precisam estar na <span style="color:#E8B731">mesma rede Wi-Fi</span>.
                 O processo demora entre 30 minutos e 2 horas dependendo da quantidade de conversas.
                 <strong>Nao mexa no celular</strong> enquanto o programa estiver rodando.
             </p>
@@ -212,57 +211,63 @@
             <div class="step">
                 <div class="step-num">2</div>
                 <div class="step-content">
-                    <h3>Ative a Depuracao USB</h3>
+                    <h3>Ative a Depuracao sem fio</h3>
                     <p>
                         Volte para <span class="highlight">Configuracoes</span> >
                         <span class="highlight">Opcoes do desenvolvedor</span> (apareceu no passo anterior).
-                        Procure <span class="highlight">Depuracao USB</span> e ative.
-                        Se pedir confirmacao, toque em <span class="highlight">OK</span>.
+                        Ative <span class="highlight">Depuracao sem fio</span>.
+                        Se pedir confirmacao, toque em <span class="highlight">Permitir</span>.
                     </p>
-                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao USB: ATIVADO</span>
+                    <span class="path">Configuracoes > Opcoes do desenvolvedor > Depuracao sem fio: ATIVADO</span>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">3</div>
                 <div class="step-content">
-                    <h3>Conecte o cabo USB e permita acesso</h3>
+                    <h3>Anote o IP e porta de conexao</h3>
                     <p>
-                        Conecte o celular no computador pelo cabo USB.
-                        Vai aparecer um aviso no celular perguntando
-                        <span class="highlight">"Permitir depuracao USB?"</span>.
-                        Marque <span class="highlight">"Sempre permitir"</span> e toque em <span class="highlight">OK</span>.
+                        Na tela de <span class="highlight">Depuracao sem fio</span>, logo abaixo
+                        do toggle, aparece um <span class="highlight">endereco IP e porta</span>
+                        (ex: 192.168.15.144:36293). Anote esse endereco.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">4</div>
+                <div class="step-content">
+                    <h3>Gere o codigo de pareamento</h3>
+                    <p>
+                        Na mesma tela, toque em
+                        <span class="highlight">"Parear dispositivo com codigo de pareamento"</span>.
+                        Vai aparecer um <span class="highlight">codigo de 6 digitos</span> e um
+                        <span class="highlight">IP:porta de pareamento</span> (diferente do anterior).
+                        Anote os dois. <strong>Nao feche essa tela!</strong>
                     </p>
                 </div>
             </div>
         </div>
 
         <div class="steps">
-            <h2>Usar o programa</h2>
-
-            <div class="step">
-                <div class="step-num">4</div>
-                <div class="step-content">
-                    <h3>Abra o programa e conecte</h3>
-                    <p>
-                        Abra o <span class="highlight">WhatsAppExtractor.exe</span> no computador.
-                        Clique em <span class="highlight">"Conectar USB"</span>.
-                        Deve aparecer "Dispositivo conectado!" na tela.
-                    </p>
-                </div>
-            </div>
+            <h2>Conectar e usar o programa</h2>
 
             <div class="step">
                 <div class="step-num">5</div>
                 <div class="step-content">
-                    <h3>Clique "Diagnosticar" (teste rapido)</h3>
+                    <h3>Abra o programa e conecte via Wi-Fi</h3>
                     <p>
-                        Antes de extrair tudo, clique em
-                        <span class="highlight">"Diagnosticar"</span>.
-                        O programa faz um teste rapido pra ver se tudo funciona.
-                        Espere ate aparecer o resultado.
-                        Se der <span style="color:#00C9A7">OK</span>, siga pro passo 6.
-                        Se der <span style="color:#FF4444">FALHOU</span>, me mande um print da tela.
+                        Abra o <span class="highlight">WhatsAppExtractor.exe</span> no computador.
+                        Preencha os 3 campos no topo:
+                    </p>
+                    <p style="margin-top: 6px;">
+                        <span class="highlight">IP e porta de pareamento</span> — o que aparece na tela do codigo (ex: 192.168.15.144:40001)<br>
+                        <span class="highlight">Codigo de pareamento</span> — os 6 digitos (ex: 310021)<br>
+                        <span class="highlight">IP e porta de conexao</span> — o que anotou no passo 3 (ex: 192.168.15.144:36293)
+                    </p>
+                    <p style="margin-top: 6px;">
+                        Clique <span class="highlight">"Conectar via Wi-Fi"</span>.
+                        Deve aparecer "Conectado via Wi-Fi!" na tela.
                     </p>
                 </div>
             </div>
@@ -270,18 +275,33 @@
             <div class="step">
                 <div class="step-num">6</div>
                 <div class="step-content">
-                    <h3>Clique "Testar 1 Conversa"</h3>
+                    <h3>Clique "Diagnosticar"</h3>
                     <p>
-                        Clique em <span class="highlight">"Testar 1 Conversa"</span>
-                        para exportar apenas uma conversa como teste.
-                        Se funcionar, siga pro passo 7.
-                        Se nao funcionar, me mande um print da tela.
+                        Clique em <span class="highlight">"Diagnosticar"</span>.
+                        O programa vai preparar o celular automaticamente
+                        (instala um app auxiliar pequeno para salvar os arquivos).
+                        Espere ate aparecer o resultado.
+                        Se der <span style="color:#00C9A7">OK</span>, siga pro passo 7.
+                        Se der <span style="color:#FF4444">FALHOU</span>, me mande um print da tela.
                     </p>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-num">7</div>
+                <div class="step-content">
+                    <h3>Clique "Testar 1 Conversa"</h3>
+                    <p>
+                        Clique em <span class="highlight">"Testar 1 Conversa"</span>
+                        para exportar apenas uma conversa como teste.
+                        Se funcionar, siga pro passo 8.
+                        Se nao funcionar, me mande um print da tela.
+                    </p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-num">8</div>
                 <div class="step-content">
                     <h3>Clique "EXTRAIR TUDO" e aguarde</h3>
                     <p>
@@ -294,58 +314,13 @@
             </div>
 
             <div class="step">
-                <div class="step-num">8</div>
+                <div class="step-num">9</div>
                 <div class="step-content">
                     <h3>Clique "Enviar pro Servidor"</h3>
                     <p>
                         Quando terminar, clique no botao
                         <span class="highlight">"Enviar pro Servidor"</span>.
                         Pronto! Os arquivos serao enviados automaticamente.
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="steps" style="border: 1px solid #E8B731;">
-            <h2 style="color: #E8B731;">Se preferir conexao via Wi-Fi (sem cabo)</h2>
-            <p style="color: #CCCCCC; font-size: 14px; margin-bottom: 16px;">
-                So use esta opcao se nao tiver um cabo USB que transfere dados.
-            </p>
-
-            <div class="step">
-                <div class="step-num">A</div>
-                <div class="step-content">
-                    <h3>Ative a Depuracao sem fio</h3>
-                    <p>
-                        Em <span class="highlight">Opcoes do desenvolvedor</span>,
-                        ative <span class="highlight">Depuracao sem fio</span>.
-                        Anote o <span class="highlight">IP e porta</span> que aparecem abaixo do toggle
-                        (ex: 192.168.1.10:43567).
-                    </p>
-                </div>
-            </div>
-
-            <div class="step">
-                <div class="step-num">B</div>
-                <div class="step-content">
-                    <h3>Gere o codigo de pareamento</h3>
-                    <p>
-                        Toque em <span class="highlight">"Parear dispositivo com codigo"</span>.
-                        Anote o <span class="highlight">codigo de 6 digitos</span> e o
-                        <span class="highlight">IP:porta de pareamento</span> (diferente do anterior).
-                        <strong>Nao feche essa tela!</strong>
-                    </p>
-                </div>
-            </div>
-
-            <div class="step">
-                <div class="step-num">C</div>
-                <div class="step-content">
-                    <h3>Preencha no programa e conecte</h3>
-                    <p>
-                        No programa, preencha os 3 campos (IP de pareamento, codigo, IP de conexao)
-                        e clique <span class="highlight">"Conectar via Wi-Fi"</span>.
-                        Depois siga os passos 5 a 8 normalmente.
                     </p>
                 </div>
             </div>
@@ -362,9 +337,10 @@
 
             <div class="faq-item">
                 <h3>"Nenhum dispositivo encontrado"</h3>
-                <p>Verifique se: (1) o cabo USB funciona pra transferir dados (testa plugando e vendo se aparece
-                   "Transferir arquivos" no celular), (2) "Depuracao USB" esta ativada,
-                   (3) voce aceitou a permissao "Permitir depuracao USB" no celular.</p>
+                <p>Verifique se: (1) o celular e o computador estao na mesma rede Wi-Fi,
+                   (2) "Depuracao sem fio" esta ativada nas Opcoes do desenvolvedor,
+                   (3) o IP, porta e codigo de pareamento estao corretos,
+                   (4) voce nao fechou a tela do codigo de pareamento antes de conectar.</p>
             </div>
 
             <div class="faq-item">
