@@ -290,20 +290,32 @@ class WhatsAppExtractorApp:
                 device_serial=device_serial, server_url=SERVER_URL
             )
 
+            def status_cb(msg):
+                # Show key messages in the progress label
+                if "AÇÃO NECESSÁRIA" in msg:
+                    self.progress_label.config(
+                        text="Toque INSTALAR no celular!", fg="#E8B731"
+                    )
+                elif "Aguardando" in msg:
+                    self.progress_label.config(text=msg.strip(), fg="#8B5CF6")
+                elif "sucesso" in msg.lower():
+                    self.progress_label.config(text=msg.strip(), fg="#00C9A7")
+                self.root.update_idletasks()
+
             self.progress_label.config(
-                text="Diagnosticando share sheet...", fg="#8B5CF6"
+                text="Preparando celular...", fg="#8B5CF6"
             )
             self.root.update_idletasks()
 
-            success = automation.diagnose_share_sheet()
+            success = automation.diagnose_share_sheet(wait_callback=status_cb)
 
             if success:
                 self.progress_label.config(
-                    text="Diagnóstico OK! Pode testar 1 conversa.", fg="#00C9A7"
+                    text="Tudo pronto! Clique em 'Testar 1 Conversa'.", fg="#00C9A7"
                 )
             else:
                 self.progress_label.config(
-                    text="Share sheet sem opção de salvar. Instale Google Files.", fg="#FF4444"
+                    text="Falhou. Instale Google Files manualmente no celular.", fg="#FF4444"
                 )
 
         except ADBError as e:

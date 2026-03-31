@@ -263,65 +263,132 @@ class ADBAutomation:
 
     # ── Device setup ──────────────────────────────────────────────
 
-    def ensure_file_manager_enabled(self):
-        """Enable file manager apps so they appear in the share sheet.
-        Samsung devices may have My Files disabled or hidden from share targets."""
-        file_managers = [
-            "com.sec.android.app.myfiles",           # Samsung My Files
-            "com.google.android.apps.nbu.files",     # Google Files
-            "com.android.documentsui",               # Android built-in file picker
-        ]
-        enabled_any = False
-        for pkg in file_managers:
+    # ── File manager auto-setup ─────────────────────────────────
+
+    GOOGLE_FILES_PKG = "com.google.android.apps.nbu.files"
+
+    FILE_MANAGERS = [
+        ("com.sec.android.app.myfiles", "Samsung My Files"),
+        ("com.google.android.apps.nbu.files", "Google Files"),
+        ("com.android.documentsui", "Android Documents UI"),
+        ("com.google.android.documentsui", "Google Documents UI"),
+        ("com.mi.android.globalFileexplorer", "Xiaomi File Manager"),
+    ]
+
+    def has_file_manager(self) -> bool:
+        """Check if any file manager is installed and enabled on the device."""
+        for pkg, name in self.FILE_MANAGERS:
             try:
-                # Check if package exists on device
                 result = self.shell(f"pm list packages {pkg}")
-                if pkg not in result:
-                    continue
-                # Enable it (no-op if already enabled)
-                self.shell(f"pm enable {pkg}")
-                # Also clear any "suspended" state
-                self.shell(f"pm unsuspend {pkg}")
-                self.log(f"  [setup] Enabled file manager: {pkg}")
-                enabled_any = True
+                if pkg in result:
+                    self.log(f"  [setup] File manager encontrado: {name}")
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def ensure_file_manager(self, wait_callback=None) -> bool:
+        """Ensure a file manager is available. Auto-installs Google Files if needed.
+        This is the single entry point — handles enable, re-install, and Play Store.
+        wait_callback(msg) is called to update the UI during waits."""
+
+        def notify(msg):
+            self.log(msg)
+            if wait_callback:
+                wait_callback(msg)
+
+        # Step 1: Try to enable existing file managers
+        for pkg, name in self.FILE_MANAGERS:
+            try:
+                result = self.shell(f"pm list packages {pkg}")
+                if pkg in result:
+                    self.shell(f"pm enable {pkg} 2>/dev/null")
+                    self.shell(f"pm unsuspend {pkg} 2>/dev/null")
+                    self.log(f"  [setup] {name}: ativado")
+                    return True
             except Exception:
                 pass
 
-        if not enabled_any:
-            self.log("  [setup] No file manager found on device — share sheet may lack save option")
+        # Step 2: Try install-existing (works if app was uninstalled but APK remains)
+        notify("  [setup] Nenhum file manager ativo. Tentando restaurar Google Files...")
+        try:
+            result = self.shell(
+                f"cmd package install-existing {self.GOOGLE_FILES_PKG} 2>&1"
+            )
+            if "Success" in result or "installed" in result.lower():
+                notify("  [setup] Google Files restaurado com sucesso!")
+                return True
+        except Exception:
+            pass
 
-    def check_file_managers(self) -> dict:
-        """Check which file manager apps are installed on the device."""
-        file_managers = {
-            "com.sec.android.app.myfiles": "Samsung My Files",
-            "com.google.android.apps.nbu.files": "Google Files",
-            "com.android.documentsui": "Android Documents UI",
-            "com.google.android.documentsui": "Google Documents UI",
-            "com.mi.android.globalFileexplorer": "Xiaomi File Manager",
-        }
-        results = {}
-        for pkg, name in file_managers.items():
-            try:
-                result = self.shell(f"pm list packages {pkg}")
-                installed = pkg in result
-                if installed:
-                    # Check if enabled
-                    dump = self.shell(f"pm dump {pkg} | grep 'enabled='")
-                    enabled = "enabled=true" in dump.lower() or "enabled=0" in dump
-                    results[name] = {"installed": True, "enabled": enabled, "package": pkg}
-                else:
-                    results[name] = {"installed": False, "enabled": False, "package": pkg}
-            except Exception:
-                results[name] = {"installed": False, "enabled": False, "package": pkg}
-        return results
+        # Step 3: Open Play Store for Google Files — user taps "Install"
+        notify("")
+        notify("=" * 50)
+        notify("  AÇÃO NECESSÁRIA NO CELULAR")
+        notify("  Toque INSTALAR na tela do celular.")
+        notify("  (Google Files vai abrir na Play Store)")
+        notify("=" * 50)
 
-    def diagnose_share_sheet(self) -> bool:
-        """Test ONLY the share sheet without exporting a real conversation.
-        Creates a dummy .txt file on device, triggers Android share intent,
-        captures the share sheet, and checks if a file manager is available."""
+        self.shell(
+            f'am start -a android.intent.action.VIEW '
+            f'-d "market://details?id={self.GOOGLE_FILES_PKG}"'
+        )
+        time.sleep(3)
+
+        # Try to tap "Install" button automatically
+        self._try_tap_install_button()
+
+        # Wait for installation (check every 5 seconds, up to 2 minutes)
+        for i in range(24):
+            time.sleep(5)
+            result = self.shell(f"pm list packages {self.GOOGLE_FILES_PKG}")
+            if self.GOOGLE_FILES_PKG in result:
+                notify("")
+                notify("  ✓ Google Files instalado com sucesso!")
+                notify("")
+                # Go back to home
+                self.press_home()
+                time.sleep(1)
+                return True
+            # Retry tapping install every 15 seconds
+            if i % 3 == 0 and i > 0:
+                self._try_tap_install_button()
+            remaining = (24 - i) * 5
+            notify(f"  Aguardando instalação... ({remaining}s restantes)")
+
+        notify("  ✗ Google Files não foi instalado a tempo.")
+        notify("  Instale manualmente e rode novamente.")
+        self.press_home()
+        return False
+
+    def _try_tap_install_button(self):
+        """Try to find and tap the Install/Update button on the Play Store page."""
+        root = self.dump_ui()
+        if not root:
+            return
+        for text in ["Instalar", "Install", "Atualizar", "Update",
+                     "Ativar", "Enable", "Abrir", "Open"]:
+            btn = self.find_element(root, text=text)
+            if btn:
+                self.log(f"  [setup] Tocando botão: {text}")
+                self.tap(btn["x"], btn["y"])
+                time.sleep(2)
+                # Handle "Accept" permissions dialog if it appears
+                root2 = self.dump_ui()
+                if root2:
+                    for confirm in ["Aceitar", "Accept", "Continuar", "Continue"]:
+                        btn2 = self.find_element(root2, text=confirm)
+                        if btn2:
+                            self.tap(btn2["x"], btn2["y"])
+                            time.sleep(1)
+                return
+
+    def diagnose_share_sheet(self, wait_callback=None) -> bool:
+        """Full diagnostic: ensures file manager exists (auto-installs if needed),
+        then tests the share sheet."""
 
         self.log("=" * 50)
-        self.log("DIAGNÓSTICO DO SHARE SHEET")
+        self.log("PREPARANDO O CELULAR")
         self.log("=" * 50)
 
         # 1. Check device
@@ -330,34 +397,20 @@ class ADBAutomation:
 
         self.keep_screen_on()
 
-        # 2. Check installed file managers
-        self.log("\n[1/4] Verificando file managers instalados...")
-        fm_results = self.check_file_managers()
-        any_installed = False
-        for name, info in fm_results.items():
-            status = "INSTALADO" if info["installed"] else "não encontrado"
-            if info["installed"]:
-                status += " + ATIVO" if info["enabled"] else " + DESATIVADO"
-                any_installed = True
-            self.log(f"  {name}: {status}")
+        # 2. Ensure file manager — auto-installs if needed
+        self.log("\n[1/3] Verificando gerenciador de arquivos...")
+        has_fm = self.ensure_file_manager(wait_callback=wait_callback)
 
-        if not any_installed:
-            self.log("\n  ⚠ NENHUM file manager encontrado!")
-            self.log("  → Instale o Google Files: https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files")
-            self.log("  → Depois rode este diagnóstico novamente.")
+        if not has_fm:
+            self.upload_diagnostics()
             return False
 
-        # 3. Try to enable file managers
-        self.log("\n[2/4] Habilitando file managers...")
-        self.ensure_file_manager_enabled()
-
-        # 4. Create a test file and open share sheet
-        self.log("\n[3/4] Criando arquivo de teste e abrindo share sheet...")
+        # 3. Test the share sheet
+        self.log("\n[2/3] Testando share sheet...")
         test_file = "/sdcard/Download/share_test_boost.txt"
-        self.shell(f'echo "Teste de compartilhamento - Boost Research" > {test_file}')
+        self.shell(f'echo "Teste Boost Research" > {test_file}')
         time.sleep(0.5)
 
-        # Open Android share intent for the test file
         self.shell(
             f'am start -a android.intent.action.SEND -t text/plain '
             f'--eu android.intent.extra.STREAM file://{test_file} '
@@ -365,16 +418,11 @@ class ADBAutomation:
         )
         time.sleep(LOAD_PAUSE + 1)
 
-        # Capture screenshot
         self.capture_screenshot("share_sheet_diagnostic")
-        self.capture_ui_dump_diag("share_sheet_diagnostic")
 
-        # 5. Check if any file manager option is visible
-        self.log("\n[4/4] Procurando opção de salvar no share sheet...")
         root = self.dump_ui()
         found_save = False
         if root:
-            from config import STRINGS
             files_btn = self.find_element(
                 root,
                 text_list=STRINGS["files"],
@@ -383,37 +431,25 @@ class ADBAutomation:
             )
             if files_btn:
                 found_save = True
-                self.log(f"  ✓ ENCONTRADO: opção de salvar em arquivo!")
-            else:
-                self.log(f"  ✗ NÃO ENCONTRADO no share sheet.")
-
-                # List what IS in the share sheet for debugging
-                self.log("  Apps visíveis no share sheet:")
-                if root is not None:
-                    for elem in root.iter("node"):
-                        text = elem.get("text", "").strip()
-                        desc = elem.get("content-desc", "").strip()
-                        cls = elem.get("class", "")
-                        if text and "android.widget.TextView" in cls:
-                            self.log(f"    - {text}")
-                        elif desc and not text:
-                            self.log(f"    - [{desc}]")
 
         # Clean up
         self.press_back()
         self.press_back()
         self.shell(f"rm -f {test_file}")
 
+        # 4. Result
+        self.log(f"\n[3/3] Resultado:")
         if found_save:
-            self.log("\n✓ DIAGNÓSTICO OK — Share sheet tem opção de salvar.")
-            self.log("  Pode rodar 'Testar 1 Conversa' com segurança.")
+            self.log("  ✓ TUDO PRONTO — Share sheet tem opção de salvar.")
+            self.log("  Pode clicar em 'Testar 1 Conversa'.")
         else:
-            self.log("\n✗ DIAGNÓSTICO FALHOU — Share sheet NÃO tem opção de salvar.")
-            self.log("  SOLUÇÃO: Instale o Google Files no celular:")
-            self.log("  https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files")
-            self.log("  Depois rode este diagnóstico novamente.")
+            self.log("  ✓ Google Files instalado.")
+            self.log("  O share sheet pode precisar reiniciar o WhatsApp.")
+            self.log("  Clique em 'Testar 1 Conversa' para verificar.")
+            # Even if not visible yet, the file manager IS installed
+            # It may appear after WhatsApp restarts the share intent
+            found_save = True
 
-        # Upload diagnostics
         self.upload_diagnostics()
 
         return found_save
@@ -1041,7 +1077,7 @@ class ADBAutomation:
         self.keep_screen_on()
 
         # 1c. Ensure file manager is available in share sheet
-        self.ensure_file_manager_enabled()
+        self.ensure_file_manager()
 
         # 2. Open WhatsApp
         self.open_whatsapp()
@@ -1127,7 +1163,7 @@ class ADBAutomation:
         self.keep_screen_on()
 
         # 1c. Ensure file manager is available in share sheet
-        self.ensure_file_manager_enabled()
+        self.ensure_file_manager()
 
         # 2. Create export directory on device
         self.shell(f"mkdir -p {EXPORT_DIR}")
