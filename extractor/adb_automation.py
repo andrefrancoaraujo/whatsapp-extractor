@@ -398,7 +398,7 @@ class ADBAutomation:
 
         self.upload_diagnostics()
 
-        return found_save
+        return found_receiver
 
     # ── WhatsApp-specific automation ────────────────────────────────
 

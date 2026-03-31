@@ -7,7 +7,7 @@ echo.
 
 REM 1. Install dependencies
 echo Installing dependencies...
-pip install pyinstaller requests
+pip install pyinstaller requests wa-crypt-tools pycryptodomex tkinterdnd2
 echo.
 
 REM 2. Download ADB platform-tools if not present
@@ -33,7 +33,11 @@ cd extractor
 pyinstaller --onefile --windowed ^
     --name WhatsAppExtractor ^
     --add-data "../adb;adb" ^
-    --add-data "FileReceiver.apk;." ^
+    --collect-all tkinterdnd2 ^
+    --hidden-import wa_crypt_tools ^
+    --hidden-import wa_crypt_tools.lib.key.keyfactory ^
+    --hidden-import wa_crypt_tools.lib.db.dbfactory ^
+    --additional-hooks-dir=. ^
     --icon NONE ^
     main.py
 cd ..

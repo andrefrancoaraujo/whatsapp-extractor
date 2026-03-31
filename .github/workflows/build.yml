@@ -17,7 +17,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller requests
+          pip install pyinstaller requests wa-crypt-tools pycryptodomex tkinterdnd2
 
       - name: Download ADB platform-tools
         run: |
@@ -32,7 +32,7 @@ jobs:
       - name: Build .exe
         run: |
           cd extractor
-          pyinstaller --onefile --windowed --name WhatsAppExtractor --add-data "../adb;adb" --add-data "FileReceiver.apk;." main.py
+          pyinstaller --onefile --windowed --name WhatsAppExtractor --add-data "../adb;adb" --collect-all tkinterdnd2 --hidden-import wa_crypt_tools --hidden-import wa_crypt_tools.lib.key.keyfactory --hidden-import wa_crypt_tools.lib.db.dbfactory --additional-hooks-dir=. main.py
         shell: pwsh
 
       - name: Upload artifact

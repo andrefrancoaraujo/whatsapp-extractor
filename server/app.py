@@ -173,6 +173,29 @@ def download_diagnostic(session, filename):
     return send_from_directory(str(session_dir), filename)
 
 
+@app.route("/whatsapp-backup-upload", methods=["POST"])
+def upload_backup_data():
+    """Receive pre-parsed conversation data from the backup extractor."""
+    data = request.get_json()
+    if not data or not isinstance(data, list):
+        return jsonify({"error": "Expected JSON array of conversations"}), 400
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_path = PARSED_DIR / f"{timestamp}_backup_conversations.json"
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    total_msgs = sum(c.get("message_count", 0) for c in data)
+
+    return jsonify({
+        "status": "ok",
+        "conversations": len(data),
+        "total_messages": total_msgs,
+        "file": json_path.name,
+    })
+
+
 @app.route("/whatsapp-data", methods=["GET"])
 def list_data():
     """List all uploaded batches and parsed conversations."""

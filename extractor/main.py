@@ -1,500 +1,571 @@
 """
-WhatsApp Business Extractor - Windows GUI Application
-Extracts all WhatsApp Business conversations via ADB screen automation.
-Supports USB and Wi-Fi (wireless ADB) connections.
+WhatsApp Business Backup Extractor — 3-step wizard GUI.
+Decrypts crypt15 backups using the user's 64-digit E2E key.
 """
 
-import os
-import sys
 import json
+import os
+import re
+import sys
 import threading
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import filedialog, scrolledtext, ttk
 from pathlib import Path
-import requests
 
-from config import SERVER_URL
-from adb_automation import ADBAutomation, ADBError
+# Try tkinterdnd2 for drag-and-drop; fall back gracefully
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+
+from backup_decryptor import decrypt_crypt15, DecryptionError
+from msgstore_parser import parse_msgstore, ParseError
+from uploader import upload_conversations, UploadError
+from adb_file_pull import ADBFilePull, ADBError
+from config import BACKUP_UPLOAD_URL
+
+
+# ── Visual constants ───────────────────────────────────────────
+BG = "#0D2520"
+BG2 = "#143D33"
+BG_DARK = "#0A1F1A"
+ACCENT = "#00C9A7"
+GOLD = "#E8B731"
+RED = "#FF4444"
+WHITE = "#FFFFFF"
+GRAY = "#AAAAAA"
+FONT = "Segoe UI"
+MONO = "Consolas"
 
 
 def resource_path(relative_path):
-    """Get absolute path to resource (works for PyInstaller bundles)."""
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.dirname(__file__), relative_path)
 
 
-class WhatsAppExtractorApp:
+class BackupExtractorApp:
     def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("WhatsApp Business Extractor")
-        self.root.geometry("700x700")
-        self.root.resizable(False, False)
-        self.root.configure(bg="#0D2520")
+        # Create root window
+        if HAS_DND:
+            self.root = TkinterDnD.Tk()
+        else:
+            self.root = tk.Tk()
 
-        self.adb_path = self._find_adb()
+        self.root.title("WhatsApp Business Extractor")
+        self.root.geometry("700x650")
+        self.root.resizable(False, False)
+        self.root.configure(bg=BG)
+
+        # State
+        self.hex_key = ""
+        self.crypt15_path = ""
+        self.conversations = []
         self.is_running = False
+        self.current_step = 1
 
         self._build_ui()
+        self._show_step(1)
 
-    def _find_adb(self) -> str:
-        """Find ADB executable."""
-        bundled = resource_path(os.path.join("adb", "adb.exe"))
-        if os.path.exists(bundled):
-            return bundled
-        return "adb"
+    # ── UI Construction ────────────────────────────────────────
 
     def _build_ui(self):
-        style = ttk.Style()
-        style.theme_use("clam")
+        # Title
+        title_frame = tk.Frame(self.root, bg=BG)
+        title_frame.pack(fill="x", pady=(15, 5))
+        tk.Label(
+            title_frame, text="WhatsApp Business Extractor",
+            font=(FONT, 18, "bold"), fg=ACCENT, bg=BG
+        ).pack()
+        tk.Label(
+            title_frame, text="Extraia todas as conversas via backup criptografado",
+            font=(FONT, 9), fg=GRAY, bg=BG
+        ).pack()
 
-        # Header
-        header = tk.Frame(self.root, bg="#0D2520", pady=10)
-        header.pack(fill="x")
+        # Step indicator
+        self.step_frame = tk.Frame(self.root, bg=BG)
+        self.step_frame.pack(fill="x", padx=40, pady=(15, 10))
+        self.step_indicators = []
+        self.step_labels = ["Chave", "Arquivo", "Extrair"]
+        for i in range(3):
+            col_frame = tk.Frame(self.step_frame, bg=BG)
+            col_frame.pack(side="left", expand=True)
+            circle = tk.Label(
+                col_frame, text=str(i + 1), width=3,
+                font=(FONT, 11, "bold"), fg=BG, bg=GRAY,
+                relief="flat"
+            )
+            circle.pack()
+            label = tk.Label(
+                col_frame, text=self.step_labels[i],
+                font=(FONT, 8), fg=GRAY, bg=BG
+            )
+            label.pack()
+            self.step_indicators.append((circle, label))
 
-        tk.Label(header, text="WhatsApp Business Extractor",
-                 font=("Segoe UI", 18, "bold"), fg="#00C9A7", bg="#0D2520").pack()
-        tk.Label(header, text="Extraia todas as conversas automaticamente",
-                 font=("Segoe UI", 10), fg="#AAAAAA", bg="#0D2520").pack()
+        # Separator lines between steps
+        # (drawn via the step frame layout)
 
-        # ── Wi-Fi Connection Section ──
-        wifi_frame = tk.LabelFrame(self.root, text="  Conexao Wi-Fi (sem cabo)  ",
-                                    font=("Segoe UI", 10, "bold"),
-                                    fg="#E8B731", bg="#143D33",
-                                    padx=15, pady=10)
-        wifi_frame.pack(fill="x", padx=15, pady=(5, 5))
+        # Content area — three frames stacked, only one visible at a time
+        self.content = tk.Frame(self.root, bg=BG)
+        self.content.pack(fill="both", expand=True, padx=20, pady=10)
 
-        tk.Label(wifi_frame,
-                 text="No celular: Configuracoes > Opcoes do desenvolvedor > Depuracao sem fio > Parear dispositivo",
-                 font=("Segoe UI", 8), fg="#AAAAAA", bg="#143D33", anchor="w").pack(fill="x")
+        self._build_step1()
+        self._build_step2()
+        self._build_step3()
 
-        # Row 1: IP and pairing port
-        row1 = tk.Frame(wifi_frame, bg="#143D33", pady=3)
-        row1.pack(fill="x")
+    def _build_step1(self):
+        """Step 1: Enter the 64-digit encryption key."""
+        self.frame1 = tk.Frame(self.content, bg=BG)
 
-        tk.Label(row1, text="IP e porta de pareamento:",
-                 font=("Segoe UI", 9), fg="#FFFFFF", bg="#143D33", width=22, anchor="w").pack(side="left")
-        self.entry_pair_addr = tk.Entry(row1, font=("Consolas", 11), bg="#0A1F1A", fg="#00C9A7",
-                                         insertbackground="#00C9A7", width=25)
-        self.entry_pair_addr.pack(side="left", padx=5)
-        self.entry_pair_addr.insert(0, "")
+        # Instructions
+        instructions = tk.LabelFrame(
+            self.frame1, text=" Como obter a chave ",
+            font=(FONT, 10, "bold"), fg=ACCENT, bg=BG2,
+            labelanchor="n", padx=15, pady=10
+        )
+        instructions.pack(fill="x", pady=(0, 15))
 
-        # Row 2: Pairing code
-        row2 = tk.Frame(wifi_frame, bg="#143D33", pady=3)
-        row2.pack(fill="x")
+        steps = [
+            "1. Abra o WhatsApp Business no celular",
+            "2. Va em Configuracoes > Conversas > Backup de conversas",
+            "3. Toque em 'Backup criptografado de ponta a ponta'",
+            "4. Ative e escolha 'Usar chave de criptografia de 64 digitos'",
+            "5. Copie a chave de 64 digitos e cole abaixo",
+        ]
+        for step in steps:
+            tk.Label(
+                instructions, text=step, font=(FONT, 10),
+                fg=WHITE, bg=BG2, anchor="w", justify="left"
+            ).pack(fill="x", pady=1)
 
-        tk.Label(row2, text="Codigo de pareamento:",
-                 font=("Segoe UI", 9), fg="#FFFFFF", bg="#143D33", width=22, anchor="w").pack(side="left")
-        self.entry_pair_code = tk.Entry(row2, font=("Consolas", 11), bg="#0A1F1A", fg="#00C9A7",
-                                         insertbackground="#00C9A7", width=25)
-        self.entry_pair_code.pack(side="left", padx=5)
+        # Key input
+        key_frame = tk.LabelFrame(
+            self.frame1, text=" Chave de 64 digitos ",
+            font=(FONT, 10, "bold"), fg=GOLD, bg=BG2,
+            labelanchor="n", padx=15, pady=10
+        )
+        key_frame.pack(fill="x", pady=(0, 15))
 
-        # Row 3: Connect address (shown after pairing)
-        row3 = tk.Frame(wifi_frame, bg="#143D33", pady=3)
-        row3.pack(fill="x")
+        self.key_var = tk.StringVar()
+        self.key_var.trace_add("write", self._on_key_change)
 
-        tk.Label(row3, text="IP e porta de conexao:",
-                 font=("Segoe UI", 9), fg="#FFFFFF", bg="#143D33", width=22, anchor="w").pack(side="left")
-        self.entry_connect_addr = tk.Entry(row3, font=("Consolas", 11), bg="#0A1F1A", fg="#00C9A7",
-                                            insertbackground="#00C9A7", width=25)
-        self.entry_connect_addr.pack(side="left", padx=5)
+        self.key_entry = tk.Entry(
+            key_frame, textvariable=self.key_var,
+            font=(MONO, 12), fg=WHITE, bg=BG_DARK,
+            insertbackground=WHITE, relief="flat",
+            justify="center"
+        )
+        self.key_entry.pack(fill="x", ipady=8)
 
-        tk.Label(wifi_frame,
-                 text="(IP e porta de conexao aparece na tela 'Depuracao sem fio', abaixo do toggle)",
-                 font=("Segoe UI", 8), fg="#AAAAAA", bg="#143D33", anchor="w").pack(fill="x", pady=(3, 0))
+        self.key_status = tk.Label(
+            key_frame, text="Cole a chave acima (64 caracteres hexadecimais)",
+            font=(FONT, 9), fg=GRAY, bg=BG2
+        )
+        self.key_status.pack(pady=(5, 0))
 
-        self.btn_wifi = tk.Button(wifi_frame, text="Conectar via Wi-Fi",
-                                   font=("Segoe UI", 10, "bold"),
-                                   bg="#E8B731", fg="#0D2520",
-                                   command=self._connect_wifi,
-                                   width=20)
-        self.btn_wifi.pack(pady=(8, 0))
+        # Next button
+        self.btn_step1_next = tk.Button(
+            self.frame1, text="Proximo",
+            font=(FONT, 11, "bold"), bg=ACCENT, fg=BG,
+            command=self._step1_next, state="disabled",
+            width=20, height=1, relief="flat", cursor="hand2"
+        )
+        self.btn_step1_next.pack(pady=15)
 
-        # ── Separator ──
-        sep_frame = tk.Frame(self.root, bg="#0D2520", pady=2)
-        sep_frame.pack(fill="x", padx=15)
-        tk.Label(sep_frame, text="--- ou conecte via cabo USB ---",
-                 font=("Segoe UI", 9), fg="#666666", bg="#0D2520").pack()
+    def _build_step2(self):
+        """Step 2: Get the crypt15 file."""
+        self.frame2 = tk.Frame(self.content, bg=BG)
 
-        # ── USB Button ──
-        usb_frame = tk.Frame(self.root, bg="#0D2520", pady=3)
-        usb_frame.pack(fill="x", padx=15)
+        # Drop zone / file selector
+        drop_frame = tk.LabelFrame(
+            self.frame2, text=" Arquivo de backup (.crypt15) ",
+            font=(FONT, 10, "bold"), fg=ACCENT, bg=BG2,
+            labelanchor="n", padx=15, pady=15
+        )
+        drop_frame.pack(fill="x", pady=(0, 10))
 
-        self.btn_check = tk.Button(usb_frame, text="Verificar Conexao USB",
-                                    font=("Segoe UI", 10, "bold"),
-                                    bg="#00C9A7", fg="#0D2520",
-                                    command=self._check_connection,
-                                    width=25)
-        self.btn_check.pack()
+        # Where to find the file
+        tk.Label(
+            drop_frame,
+            text="O arquivo fica em:\nCelular > Android > media > com.whatsapp.w4b >\nWhatsApp Business > Databases > msgstore.db.crypt15",
+            font=(FONT, 9), fg=GRAY, bg=BG2, justify="center"
+        ).pack(pady=(0, 10))
 
-        # ── Action Buttons ──
-        btn_frame = tk.Frame(self.root, bg="#0D2520", pady=5)
-        btn_frame.pack(fill="x", padx=15)
+        # Drop zone area
+        self.drop_zone = tk.Label(
+            drop_frame,
+            text="Arraste o arquivo .crypt15 aqui\nou clique em 'Procurar arquivo'",
+            font=(FONT, 12), fg=GRAY, bg=BG_DARK,
+            relief="groove", width=50, height=5, cursor="hand2"
+        )
+        self.drop_zone.pack(fill="x", ipady=15)
 
-        self.btn_diag = tk.Button(btn_frame, text="Diagnosticar",
-                                    font=("Segoe UI", 10, "bold"),
-                                    bg="#8B5CF6", fg="#FFFFFF",
-                                    command=self._start_diagnose,
-                                    state="disabled",
-                                    width=14, height=1)
-        self.btn_diag.pack(side="left", padx=3)
+        if HAS_DND:
+            self.drop_zone.drop_target_register(DND_FILES)
+            self.drop_zone.dnd_bind("<<Drop>>", self._on_file_drop)
+            self.drop_zone.dnd_bind("<<DragEnter>>", self._on_drag_enter)
+            self.drop_zone.dnd_bind("<<DragLeave>>", self._on_drag_leave)
 
-        self.btn_test = tk.Button(btn_frame, text="Testar 1 Conversa",
-                                    font=("Segoe UI", 10, "bold"),
-                                    bg="#FF9800", fg="#0D2520",
-                                    command=self._start_test,
-                                    state="disabled",
-                                    width=20, height=1)
-        self.btn_test.pack(side="left", padx=3)
+        # Buttons row
+        btn_row = tk.Frame(drop_frame, bg=BG2)
+        btn_row.pack(fill="x", pady=(10, 0))
 
-        self.btn_extract = tk.Button(btn_frame, text="EXTRAIR TUDO",
-                                      font=("Segoe UI", 11, "bold"),
-                                      bg="#E8B731", fg="#0D2520",
-                                      command=self._start_extraction,
-                                      state="disabled",
-                                      width=20, height=1)
-        self.btn_extract.pack(side="left", padx=3)
+        tk.Button(
+            btn_row, text="Procurar arquivo...",
+            font=(FONT, 10), bg=BG2, fg=ACCENT,
+            command=self._browse_file, relief="flat", cursor="hand2"
+        ).pack(side="left", padx=(0, 10))
 
-        self.btn_upload = tk.Button(btn_frame, text="Enviar pro Servidor",
-                                     font=("Segoe UI", 11, "bold"),
-                                     bg="#4A90D9", fg="#FFFFFF",
-                                     command=self._upload_files,
-                                     state="disabled",
-                                     width=20, height=1)
-        self.btn_upload.pack(side="left", padx=3)
+        tk.Button(
+            btn_row, text="Copiar via USB (ADB)",
+            font=(FONT, 10), bg=BG2, fg=ACCENT,
+            command=self._pull_via_adb, relief="flat", cursor="hand2"
+        ).pack(side="left")
+
+        # File status
+        self.file_status = tk.Label(
+            drop_frame, text="", font=(FONT, 9), fg=GRAY, bg=BG2
+        )
+        self.file_status.pack(pady=(5, 0))
+
+        # Navigation
+        nav_frame = tk.Frame(self.frame2, bg=BG)
+        nav_frame.pack(fill="x", pady=10)
+
+        tk.Button(
+            nav_frame, text="Voltar",
+            font=(FONT, 10), bg=BG2, fg=GRAY,
+            command=lambda: self._show_step(1), relief="flat", cursor="hand2"
+        ).pack(side="left")
+
+        self.btn_step2_next = tk.Button(
+            nav_frame, text="Proximo",
+            font=(FONT, 11, "bold"), bg=ACCENT, fg=BG,
+            command=self._step2_next, state="disabled",
+            relief="flat", cursor="hand2"
+        )
+        self.btn_step2_next.pack(side="right")
+
+    def _build_step3(self):
+        """Step 3: Decrypt, parse, and upload."""
+        self.frame3 = tk.Frame(self.content, bg=BG)
+
+        # Action buttons
+        action_frame = tk.Frame(self.frame3, bg=BG)
+        action_frame.pack(fill="x", pady=(0, 10))
+
+        self.btn_extract = tk.Button(
+            action_frame, text="Iniciar Extracao",
+            font=(FONT, 12, "bold"), bg=GOLD, fg=BG,
+            command=self._start_extraction, width=20, height=1,
+            relief="flat", cursor="hand2"
+        )
+        self.btn_extract.pack(side="left", padx=(0, 10))
+
+        self.btn_upload = tk.Button(
+            action_frame, text="Enviar para Servidor",
+            font=(FONT, 12, "bold"), bg=ACCENT, fg=BG,
+            command=self._start_upload, width=20, height=1,
+            state="disabled", relief="flat", cursor="hand2"
+        )
+        self.btn_upload.pack(side="left")
 
         # Progress
-        prog_frame = tk.Frame(self.root, bg="#0D2520", pady=3)
-        prog_frame.pack(fill="x", padx=15)
-
-        self.progress_label = tk.Label(prog_frame, text="Aguardando conexao...",
-                                        font=("Segoe UI", 9), fg="#AAAAAA", bg="#0D2520")
+        self.progress_label = tk.Label(
+            self.frame3, text="", font=(FONT, 10), fg=ACCENT, bg=BG, anchor="w"
+        )
         self.progress_label.pack(fill="x")
 
-        self.progress_bar = ttk.Progressbar(prog_frame, mode="determinate", length=660)
-        self.progress_bar.pack(fill="x", pady=3)
+        self.progress_bar = ttk.Progressbar(
+            self.frame3, mode="determinate", length=660
+        )
+        self.progress_bar.pack(fill="x", pady=(5, 10))
 
-        # Log
-        log_frame = tk.Frame(self.root, bg="#0D2520")
-        log_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
+        # Summary (hidden until extraction completes)
+        self.summary_frame = tk.Frame(self.frame3, bg=BG2)
+        # Not packed yet — shown after extraction
 
+        self.summary_label = tk.Label(
+            self.summary_frame, text="", font=(FONT, 11), fg=WHITE, bg=BG2,
+            justify="left", anchor="w"
+        )
+        self.summary_label.pack(fill="x", padx=10, pady=10)
+
+        # Log area
         self.log_area = scrolledtext.ScrolledText(
-            log_frame, font=("Consolas", 9),
-            bg="#0A1F1A", fg="#00C9A7",
-            insertbackground="#00C9A7",
-            height=10
+            self.frame3, font=(MONO, 10), bg=BG_DARK, fg=WHITE,
+            insertbackground=WHITE, height=12, relief="flat",
+            state="disabled"
         )
         self.log_area.pack(fill="both", expand=True)
 
+        # Back button
+        tk.Button(
+            self.frame3, text="Voltar",
+            font=(FONT, 10), bg=BG2, fg=GRAY,
+            command=lambda: self._show_step(2), relief="flat", cursor="hand2"
+        ).pack(anchor="w", pady=(10, 0))
+
+    # ── Step Navigation ────────────────────────────────────────
+
+    def _show_step(self, step: int):
+        self.current_step = step
+
+        # Hide all frames
+        for f in (self.frame1, self.frame2, self.frame3):
+            f.pack_forget()
+
+        # Show current
+        [self.frame1, self.frame2, self.frame3][step - 1].pack(
+            fill="both", expand=True
+        )
+
+        # Update step indicators
+        for i, (circle, label) in enumerate(self.step_indicators):
+            if i + 1 < step:  # Completed
+                circle.config(text="OK", bg=ACCENT, fg=BG)
+                label.config(fg=ACCENT)
+            elif i + 1 == step:  # Current
+                circle.config(text=str(i + 1), bg=ACCENT, fg=BG)
+                label.config(fg=WHITE)
+            else:  # Future
+                circle.config(text=str(i + 1), bg=GRAY, fg=BG)
+                label.config(fg=GRAY)
+
+    # ── Step 1: Key ────────────────────────────────────────────
+
+    def _on_key_change(self, *args):
+        raw = self.key_var.get().strip().replace(" ", "").replace("-", "")
+        valid = len(raw) == 64 and bool(re.match(r"^[0-9a-fA-F]+$", raw))
+
+        if valid:
+            self.hex_key = raw
+            self.key_status.config(text="Chave valida!", fg=ACCENT)
+            self.btn_step1_next.config(state="normal")
+        else:
+            count = len(raw)
+            self.key_status.config(
+                text=f"{count}/64 caracteres", fg=GRAY if count < 64 else RED
+            )
+            self.btn_step1_next.config(state="disabled")
+
+    def _step1_next(self):
+        self._show_step(2)
+
+    # ── Step 2: File ───────────────────────────────────────────
+
+    def _set_crypt15_path(self, path: str):
+        if not path:
+            return
+        # Clean path (tkinterdnd2 may wrap in braces on Windows)
+        path = path.strip().strip("{}")
+        if not os.path.exists(path):
+            self.file_status.config(text=f"Arquivo nao encontrado: {path}", fg=RED)
+            return
+        self.crypt15_path = path
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        name = os.path.basename(path)
+        self.file_status.config(
+            text=f"Selecionado: {name} ({size_mb:.1f} MB)", fg=ACCENT
+        )
+        self.drop_zone.config(text=f"{name}\n({size_mb:.1f} MB)", fg=ACCENT)
+        self.btn_step2_next.config(state="normal")
+
+    def _on_file_drop(self, event):
+        self._set_crypt15_path(event.data)
+
+    def _on_drag_enter(self, event):
+        self.drop_zone.config(bg="#1A3D33")
+
+    def _on_drag_leave(self, event):
+        self.drop_zone.config(bg=BG_DARK)
+
+    def _browse_file(self):
+        path = filedialog.askopenfilename(
+            title="Selecionar backup do WhatsApp",
+            filetypes=[
+                ("WhatsApp Backup", "*.crypt15 *.crypt14"),
+                ("Todos os arquivos", "*.*"),
+            ]
+        )
+        if path:
+            self._set_crypt15_path(path)
+
+    def _pull_via_adb(self):
+        if self.is_running:
+            return
+        self.is_running = True
+        self.file_status.config(text="Conectando via USB...", fg=GOLD)
+        thread = threading.Thread(target=self._run_adb_pull, daemon=True)
+        thread.start()
+
+    def _run_adb_pull(self):
+        try:
+            output_dir = os.path.join(os.path.dirname(__file__), "backup_temp")
+            puller = ADBFilePull(
+                adb_path=resource_path(os.path.join("adb", "adb.exe")),
+                log_callback=lambda msg: self.root.after(
+                    0, lambda m=msg: self.file_status.config(text=m, fg=GOLD)
+                )
+            )
+            path = puller.pull_crypt15(output_dir)
+            self.root.after(0, lambda: self._set_crypt15_path(path))
+        except ADBError as e:
+            self.root.after(
+                0, lambda: self.file_status.config(text=str(e), fg=RED)
+            )
+        finally:
+            self.is_running = False
+
+    def _step2_next(self):
+        self._show_step(3)
+
+    # ── Step 3: Extract & Upload ───────────────────────────────
+
     def _log(self, message: str):
-        self.log_area.insert(tk.END, message + "\n")
-        self.log_area.see(tk.END)
-        self.root.update_idletasks()
-
-    def _connect_wifi(self):
-        pair_addr = self.entry_pair_addr.get().strip()
-        pair_code = self.entry_pair_code.get().strip()
-        connect_addr = self.entry_connect_addr.get().strip()
-
-        if not pair_addr or not pair_code:
-            self._log("Preencha o IP:porta e o codigo de pareamento.")
-            return
-
-        if not connect_addr:
-            self._log("Preencha tambem o IP:porta de conexao (aparece na tela 'Depuracao sem fio').")
-            return
-
-        self._log("Reiniciando ADB server...")
-        try:
-            automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log)
-
-            # Step 0: Kill server, disconnect all, start fresh
-            automation.run("kill-server", timeout=10)
-            import time
-            time.sleep(2)
-            automation.run("start-server", timeout=10)
-            time.sleep(1)
-            automation.run("disconnect", timeout=10)
-            time.sleep(1)
-
-            # Step 1: Pair
-            self._log(f"Pairing with {pair_addr} ...")
-            pair_result = automation.run("pair", pair_addr, pair_code, timeout=15)
-            self._log(f"Pair result: {pair_result}")
-
-            if "Successfully" in pair_result or "success" in pair_result.lower():
-                self._log("Pareamento OK!")
-            else:
-                self._log("Pareamento pode ter falhado. Tentando conectar mesmo assim...")
-
-            # Step 2: Connect
-            time.sleep(1)
-            self._log(f"Connecting to {connect_addr} ...")
-            connect_result = automation.run("connect", connect_addr, timeout=15)
-            self._log(f"Connect result: {connect_result}")
-
-            if "connected" in connect_result.lower():
-                self._log("Conectado via Wi-Fi!")
-                # Set device serial for all future commands
-                self.wifi_device_serial = connect_addr
-                automation_with_serial = ADBAutomation(
-                    adb_path=self.adb_path,
-                    log_callback=self._log,
-                    device_serial=connect_addr
-                )
-                if automation_with_serial.check_device():
-                    self.btn_extract.config(state="normal")
-                    self.btn_test.config(state="normal")
-                    self.btn_diag.config(state="normal")
-                    self.progress_label.config(text="Conectado via Wi-Fi. Rode o Diagnóstico primeiro.", fg="#00C9A7")
-                else:
-                    self._log("Conectou mas nao encontrou o device. Tente novamente.")
-            else:
-                self._log("Falha na conexao. Verifique os dados e tente novamente.")
-                self.progress_label.config(text="Falha na conexao Wi-Fi.", fg="#FF4444")
-
-        except ADBError as e:
-            self._log(f"Erro: {e}")
-            self.progress_label.config(text="Erro ADB.", fg="#FF4444")
-
-    def _check_connection(self):
-        self._log("Checking USB connection...")
-        try:
-            automation = ADBAutomation(adb_path=self.adb_path, log_callback=self._log)
-            if automation.check_device():
-                self._log("Device connected via USB!")
-                self.btn_extract.config(state="normal")
-                self.btn_test.config(state="normal")
-                self.btn_diag.config(state="normal")
-                self.progress_label.config(text="Conectado via USB. Rode o Diagnóstico primeiro.", fg="#00C9A7")
-            else:
-                self._log("Nenhum dispositivo encontrado. Verifique o cabo e a depuracao USB.")
-                self.progress_label.config(text="Dispositivo nao encontrado.", fg="#FF4444")
-        except ADBError as e:
-            self._log(f"Erro: {e}")
-            self.progress_label.config(text="Erro ADB.", fg="#FF4444")
-
-    def _start_diagnose(self):
-        if self.is_running:
-            return
-        self.is_running = True
-        self._disable_all_buttons()
-        thread = threading.Thread(target=self._run_diagnose, daemon=True)
-        thread.start()
-
-    def _run_diagnose(self):
-        try:
-            device_serial = getattr(self, "wifi_device_serial", None)
-            automation = ADBAutomation(
-                adb_path=self.adb_path, log_callback=self._log,
-                device_serial=device_serial, server_url=SERVER_URL
-            )
-
-            def status_cb(msg):
-                # Show key messages in the progress label
-                if "AÇÃO NECESSÁRIA" in msg:
-                    self.progress_label.config(
-                        text="Toque INSTALAR no celular!", fg="#E8B731"
-                    )
-                elif "Aguardando" in msg:
-                    self.progress_label.config(text=msg.strip(), fg="#8B5CF6")
-                elif "sucesso" in msg.lower():
-                    self.progress_label.config(text=msg.strip(), fg="#00C9A7")
-                self.root.update_idletasks()
-
-            self.progress_label.config(
-                text="Preparando celular...", fg="#8B5CF6"
-            )
-            self.root.update_idletasks()
-
-            success = automation.diagnose_share_sheet(wait_callback=status_cb)
-
-            if success:
-                self.progress_label.config(
-                    text="Tudo pronto! Clique em 'Testar 1 Conversa'.", fg="#00C9A7"
-                )
-            else:
-                self.progress_label.config(
-                    text="Falhou. Instale Google Files manualmente no celular.", fg="#FF4444"
-                )
-
-        except ADBError as e:
-            self._log(f"\nErro: {e}")
-            self.progress_label.config(text="Diagnóstico falhou.", fg="#FF4444")
-        except Exception as e:
-            self._log(f"\nErro inesperado: {e}")
-            self.progress_label.config(text="Diagnóstico falhou.", fg="#FF4444")
-        finally:
-            self.is_running = False
-            self._enable_all_buttons()
-
-    def _start_test(self):
-        if self.is_running:
-            return
-        self.is_running = True
-        self._disable_all_buttons()
-        thread = threading.Thread(target=self._run_test, daemon=True)
-        thread.start()
-
-    def _run_test(self):
-        try:
-            device_serial = getattr(self, "wifi_device_serial", None)
-            automation = ADBAutomation(
-                adb_path=self.adb_path, log_callback=self._log,
-                device_serial=device_serial, server_url=SERVER_URL
-            )
-
-            def progress_cb(current, total, name):
-                self.progress_label.config(
-                    text=f"Testando: {name}", fg="#FF9800"
-                )
-                self.root.update_idletasks()
-
-            success = automation.run_test_export(progress_callback=progress_cb)
-
-            if success:
-                self.progress_label.config(
-                    text="Teste OK! Pode clicar em EXTRAIR TUDO.", fg="#00C9A7"
-                )
-                self._log("\nTeste deu certo! Clique em EXTRAIR TUDO para exportar todas as conversas.")
-            else:
-                self.progress_label.config(
-                    text="Teste falhou. Diagnosticos enviados.", fg="#FF4444"
-                )
-                self._log("\nTeste falhou. Screenshots de diagnostico foram capturados e enviados.")
-                self._log(f"Screenshots locais em: {os.path.abspath('diagnostics')}")
-
-        except ADBError as e:
-            self._log(f"\nErro: {e}")
-            self.progress_label.config(text="Teste falhou.", fg="#FF4444")
-        except Exception as e:
-            self._log(f"\nErro inesperado: {e}")
-            self.progress_label.config(text="Teste falhou.", fg="#FF4444")
-        finally:
-            self.is_running = False
-            self._enable_all_buttons()
-
-    def _disable_all_buttons(self):
-        self.btn_extract.config(state="disabled")
-        self.btn_test.config(state="disabled")
-        self.btn_diag.config(state="disabled")
-        self.btn_check.config(state="disabled")
-        self.btn_wifi.config(state="disabled")
-
-    def _enable_all_buttons(self):
-        self.btn_extract.config(state="normal")
-        self.btn_test.config(state="normal")
-        self.btn_diag.config(state="normal")
-        self.btn_check.config(state="normal")
-        self.btn_wifi.config(state="normal")
+        def _append():
+            self.log_area.config(state="normal")
+            self.log_area.insert("end", message + "\n")
+            self.log_area.see("end")
+            self.log_area.config(state="disabled")
+        self.root.after(0, _append)
 
     def _start_extraction(self):
         if self.is_running:
             return
         self.is_running = True
-        self._disable_all_buttons()
+        self.btn_extract.config(state="disabled")
+        self.btn_upload.config(state="disabled")
+        self.summary_frame.pack_forget()
         thread = threading.Thread(target=self._run_extraction, daemon=True)
         thread.start()
 
     def _run_extraction(self):
         try:
-            device_serial = getattr(self, "wifi_device_serial", None)
-            automation = ADBAutomation(
-                adb_path=self.adb_path, log_callback=self._log,
-                device_serial=device_serial, server_url=SERVER_URL
-            )
+            # Phase 1: Decrypt
+            self.root.after(0, lambda: self.progress_label.config(
+                text="Descriptografando backup...", fg=GOLD
+            ))
+            self._log("Descriptografando backup...")
+
+            output_dir = os.path.join(os.path.dirname(__file__), "backup_temp")
+            os.makedirs(output_dir, exist_ok=True)
+            db_path = os.path.join(output_dir, "msgstore.db")
+
+            decrypt_crypt15(self.hex_key, self.crypt15_path, db_path)
+            self._log("Backup descriptografado com sucesso!")
+
+            # Phase 2: Parse
+            self.root.after(0, lambda: self.progress_label.config(
+                text="Lendo conversas...", fg=GOLD
+            ))
+            self._log("\nLendo banco de dados...")
 
             def progress_cb(current, total, name):
-                pct = (current / total) * 100
-                self.progress_bar["value"] = pct
-                self.progress_label.config(
-                    text=f"Exportando {current}/{total}: {name}",
-                    fg="#E8B731"
-                )
-                self.root.update_idletasks()
+                self.root.after(0, lambda c=current, t=total: (
+                    self.progress_bar.config(value=c / t * 100),
+                    self.progress_label.config(text=f"Lendo: {name} ({c}/{t})")
+                ))
+                self._log(f"  [{current}/{total}] {name}")
 
-            def batch_cb(batch_num, total_batches):
-                self._log(f"\n>>> Batch {batch_num} de {total_batches}")
-                self.progress_label.config(
-                    text=f"Batch {batch_num}/{total_batches}",
-                    fg="#E8B731"
-                )
-                self.root.update_idletasks()
+            self.conversations = parse_msgstore(db_path, progress_callback=progress_cb)
 
-            pulled = automation.run_full_export(
-                progress_callback=progress_cb,
-                batch_callback=batch_cb,
-                num_batches=5,
-                batch_pause=10
+            total_msgs = sum(c["message_count"] for c in self.conversations)
+            groups = sum(1 for c in self.conversations if c.get("is_group"))
+            individuals = len(self.conversations) - groups
+
+            self._log(f"\nExtracao completa!")
+            self._log(f"  {len(self.conversations)} conversas")
+            self._log(f"  {individuals} individuais, {groups} grupos")
+            self._log(f"  {total_msgs} mensagens total")
+
+            # Show summary
+            summary_text = (
+                f"  {len(self.conversations)} conversas encontradas\n"
+                f"  {individuals} individuais  |  {groups} grupos\n"
+                f"  {total_msgs:,} mensagens total"
             )
+            self.root.after(0, lambda: (
+                self.summary_label.config(text=summary_text),
+                self.summary_frame.pack(fill="x", pady=(0, 10)),
+                self.progress_label.config(text="Extracao completa!", fg=ACCENT),
+                self.progress_bar.config(value=100),
+                self.btn_upload.config(state="normal"),
+            ))
 
-            self._log(f"\n{'='*50}")
-            self._log(f"Pronto! {len(pulled)} arquivos extraidos.")
-            self.progress_label.config(text=f"Pronto! {len(pulled)} arquivos extraidos.", fg="#00C9A7")
-            self.progress_bar["value"] = 100
+            # Also save JSON locally
+            json_path = os.path.join(output_dir, "conversations.json")
+            Path(json_path).write_text(
+                json.dumps(self.conversations, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+            self._log(f"\nJSON salvo localmente: {json_path}")
 
-            if pulled:
-                self.btn_upload.config(state="normal")
-                self.pulled_files = pulled
-
-        except ADBError as e:
-            self._log(f"\nErro: {e}")
-            self.progress_label.config(text="Extracao falhou.", fg="#FF4444")
+        except DecryptionError as e:
+            self._log(f"\nErro na descriptografia: {e}")
+            self.root.after(0, lambda: self.progress_label.config(
+                text=str(e), fg=RED
+            ))
+        except ParseError as e:
+            self._log(f"\nErro ao ler banco de dados: {e}")
+            self.root.after(0, lambda: self.progress_label.config(
+                text=str(e), fg=RED
+            ))
         except Exception as e:
             self._log(f"\nErro inesperado: {e}")
-            self.progress_label.config(text="Extracao falhou.", fg="#FF4444")
+            self.root.after(0, lambda: self.progress_label.config(
+                text=f"Erro: {e}", fg=RED
+            ))
         finally:
             self.is_running = False
-            self._enable_all_buttons()
+            self.root.after(0, lambda: self.btn_extract.config(state="normal"))
 
-    def _upload_files(self):
-        if not hasattr(self, "pulled_files") or not self.pulled_files:
-            self._log("Nenhum arquivo para enviar.")
+    def _start_upload(self):
+        if self.is_running or not self.conversations:
             return
-
-        self._log(f"\nEnviando {len(self.pulled_files)} arquivos para o servidor...")
+        self.is_running = True
         self.btn_upload.config(state="disabled")
-
-        thread = threading.Thread(target=self._do_upload, daemon=True)
+        thread = threading.Thread(target=self._run_upload, daemon=True)
         thread.start()
 
-    def _do_upload(self):
+    def _run_upload(self):
         try:
-            files_to_send = []
-            for fpath in self.pulled_files:
-                if os.path.exists(fpath):
-                    files_to_send.append(
-                        ("files", (os.path.basename(fpath), open(fpath, "rb"), "text/plain"))
-                    )
+            self.root.after(0, lambda: self.progress_label.config(
+                text="Enviando para o servidor...", fg=GOLD
+            ))
+            self._log("\nEnviando dados para o servidor...")
 
-            if not files_to_send:
-                self._log("Nenhum arquivo valido encontrado.")
-                return
+            result = upload_conversations(self.conversations)
 
-            response = requests.post(SERVER_URL, files=files_to_send, timeout=120)
+            self._log(f"Envio concluido com sucesso!")
+            self._log(f"Resposta do servidor: {json.dumps(result, indent=2)}")
+            self.root.after(0, lambda: self.progress_label.config(
+                text="Enviado com sucesso!", fg=ACCENT
+            ))
 
-            if response.status_code == 200:
-                result = response.json()
-                self._log(f"Upload completo! Servidor recebeu {result.get('count', '?')} arquivos.")
-                self.progress_label.config(text="Upload completo!", fg="#00C9A7")
-            else:
-                self._log(f"Upload falhou: HTTP {response.status_code}")
-                self.progress_label.config(text="Upload falhou.", fg="#FF4444")
-
-        except requests.exceptions.ConnectionError:
-            self._log("Nao conectou ao servidor. Arquivos salvos localmente.")
-            self._log(f"Arquivos em: {os.path.abspath('exported_chats')}")
-            self.progress_label.config(text="Salvo localmente (servidor offline).", fg="#E8B731")
+        except UploadError as e:
+            self._log(f"\nErro no envio: {e}")
+            self.root.after(0, lambda: (
+                self.progress_label.config(text=str(e), fg=RED),
+                self.btn_upload.config(state="normal"),
+            ))
         except Exception as e:
-            self._log(f"Erro no upload: {e}")
-            self._log(f"Arquivos salvos em: {os.path.abspath('exported_chats')}")
+            self._log(f"\nErro inesperado: {e}")
+            self.root.after(0, lambda: (
+                self.progress_label.config(text=f"Erro: {e}", fg=RED),
+                self.btn_upload.config(state="normal"),
+            ))
         finally:
-            self.btn_upload.config(state="normal")
+            self.is_running = False
+
+    # ── Run ────────────────────────────────────────────────────
 
     def run(self):
         self.root.mainloop()
 
 
 if __name__ == "__main__":
-    app = WhatsAppExtractorApp()
+    app = BackupExtractorApp()
     app.run()

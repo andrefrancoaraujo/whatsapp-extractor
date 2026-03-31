@@ -1,8 +1,32 @@
 SERVER_URL = "https://dashboard.andrefrancoaraujo.shop/extractor/whatsapp-upload"
+BACKUP_UPLOAD_URL = "https://dashboard.andrefrancoaraujo.shop/extractor/whatsapp-backup-upload"
+
 WHATSAPP_PACKAGE = "com.whatsapp.w4b"
 WHATSAPP_MAIN = "com.whatsapp.Main"
 EXPORT_DIR = "/sdcard/Download/whatsapp_exports"
 UI_DUMP_PATH = "/sdcard/window_dump.xml"
+
+# Backup extraction paths (Android)
+CRYPT15_PATH = "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business/Databases/msgstore.db.crypt15"
+CRYPT15_GLOB = "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Business/Databases/*.crypt15"
+
+# Message type mapping (msgstore.db message_type column)
+MESSAGE_TYPES = {
+    0: "texto",
+    1: "imagem",
+    2: "audio",
+    3: "video",
+    4: "contato",
+    5: "localizacao",
+    7: "sistema",
+    8: "documento",
+    9: "chamada perdida",
+    10: "chamada de voz",
+    13: "gif",
+    15: "deletada",
+    16: "localizacao ao vivo",
+    20: "figurinha",
+}
 
 # Strings PT-BR and EN for UI element matching
 # Multiple variants per action to handle different WA Business versions and Android versions
