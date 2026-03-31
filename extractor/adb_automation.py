@@ -263,129 +263,66 @@ class ADBAutomation:
 
     # ── Device setup ──────────────────────────────────────────────
 
-    # ── File manager auto-setup ─────────────────────────────────
+    # ── File receiver APK auto-setup ──────────────────────────────
 
-    GOOGLE_FILES_PKG = "com.google.android.apps.nbu.files"
+    RECEIVER_PKG = "com.boost.filereceiver"
+    RECEIVER_APK = "FileReceiver.apk"
+    RECEIVER_LABEL = "Salvar Arquivo"
+    EXPORT_DEVICE_DIR = "/sdcard/Download/wa_exports"
 
-    FILE_MANAGERS = [
-        ("com.sec.android.app.myfiles", "Samsung My Files"),
-        ("com.google.android.apps.nbu.files", "Google Files"),
-        ("com.android.documentsui", "Android Documents UI"),
-        ("com.google.android.documentsui", "Google Documents UI"),
-        ("com.mi.android.globalFileexplorer", "Xiaomi File Manager"),
-    ]
+    def ensure_file_receiver(self) -> bool:
+        """Install the FileReceiver APK if not already on the device.
+        This tiny app (12KB) appears in the share sheet as 'Salvar Arquivo'
+        and saves shared files to /sdcard/Download/wa_exports/.
+        Installed silently via ADB — zero user interaction needed."""
 
-    def has_file_manager(self) -> bool:
-        """Check if any file manager is installed and enabled on the device."""
-        for pkg, name in self.FILE_MANAGERS:
-            try:
-                result = self.shell(f"pm list packages {pkg}")
-                if pkg in result:
-                    self.log(f"  [setup] File manager encontrado: {name}")
-                    return True
-            except Exception:
-                pass
-        return False
+        # Check if already installed
+        result = self.shell(f"pm list packages {self.RECEIVER_PKG}")
+        if self.RECEIVER_PKG in result:
+            self.log(f"  [setup] {self.RECEIVER_LABEL} já instalado.")
+            return True
 
-    def ensure_file_manager(self, wait_callback=None) -> bool:
-        """Ensure a file manager is available. Auto-installs Google Files if needed.
-        This is the single entry point — handles enable, re-install, and Play Store.
-        wait_callback(msg) is called to update the UI during waits."""
+        # Find the APK (bundled with the program)
+        apk_path = self._find_apk()
+        if not apk_path:
+            self.log(f"  [setup] ERRO: {self.RECEIVER_APK} não encontrado.")
+            return False
 
-        def notify(msg):
-            self.log(msg)
-            if wait_callback:
-                wait_callback(msg)
-
-        # Step 1: Try to enable existing file managers
-        for pkg, name in self.FILE_MANAGERS:
-            try:
-                result = self.shell(f"pm list packages {pkg}")
-                if pkg in result:
-                    self.shell(f"pm enable {pkg} 2>/dev/null")
-                    self.shell(f"pm unsuspend {pkg} 2>/dev/null")
-                    self.log(f"  [setup] {name}: ativado")
-                    return True
-            except Exception:
-                pass
-
-        # Step 2: Try install-existing (works if app was uninstalled but APK remains)
-        notify("  [setup] Nenhum file manager ativo. Tentando restaurar Google Files...")
+        # Install via ADB (silent, no user interaction)
+        self.log(f"  [setup] Instalando {self.RECEIVER_LABEL} no celular...")
         try:
-            result = self.shell(
-                f"cmd package install-existing {self.GOOGLE_FILES_PKG} 2>&1"
-            )
-            if "Success" in result or "installed" in result.lower():
-                notify("  [setup] Google Files restaurado com sucesso!")
+            result = self.run("install", "-r", apk_path, timeout=30)
+            if "Success" in result:
+                self.log(f"  [setup] {self.RECEIVER_LABEL} instalado com sucesso!")
+                # Create the export directory
+                self.shell(f"mkdir -p {self.EXPORT_DEVICE_DIR}")
                 return True
-        except Exception:
-            pass
+            else:
+                self.log(f"  [setup] Falha na instalação: {result}")
+                return False
+        except Exception as e:
+            self.log(f"  [setup] Erro na instalação: {e}")
+            return False
 
-        # Step 3: Open Play Store for Google Files — user taps "Install"
-        notify("")
-        notify("=" * 50)
-        notify("  AÇÃO NECESSÁRIA NO CELULAR")
-        notify("  Toque INSTALAR na tela do celular.")
-        notify("  (Google Files vai abrir na Play Store)")
-        notify("=" * 50)
+    def _find_apk(self) -> Optional[str]:
+        """Find the FileReceiver.apk in common locations."""
+        candidates = [
+            Path(__file__).parent / self.RECEIVER_APK,
+            Path(self.RECEIVER_APK),
+            Path("extractor") / self.RECEIVER_APK,
+        ]
+        # Also check PyInstaller bundle path
+        import sys
+        if hasattr(sys, "_MEIPASS"):
+            candidates.insert(0, Path(sys._MEIPASS) / self.RECEIVER_APK)
 
-        self.shell(
-            f'am start -a android.intent.action.VIEW '
-            f'-d "market://details?id={self.GOOGLE_FILES_PKG}"'
-        )
-        time.sleep(3)
-
-        # Try to tap "Install" button automatically
-        self._try_tap_install_button()
-
-        # Wait for installation (check every 5 seconds, up to 2 minutes)
-        for i in range(24):
-            time.sleep(5)
-            result = self.shell(f"pm list packages {self.GOOGLE_FILES_PKG}")
-            if self.GOOGLE_FILES_PKG in result:
-                notify("")
-                notify("  ✓ Google Files instalado com sucesso!")
-                notify("")
-                # Go back to home
-                self.press_home()
-                time.sleep(1)
-                return True
-            # Retry tapping install every 15 seconds
-            if i % 3 == 0 and i > 0:
-                self._try_tap_install_button()
-            remaining = (24 - i) * 5
-            notify(f"  Aguardando instalação... ({remaining}s restantes)")
-
-        notify("  ✗ Google Files não foi instalado a tempo.")
-        notify("  Instale manualmente e rode novamente.")
-        self.press_home()
-        return False
-
-    def _try_tap_install_button(self):
-        """Try to find and tap the Install/Update button on the Play Store page."""
-        root = self.dump_ui()
-        if not root:
-            return
-        for text in ["Instalar", "Install", "Atualizar", "Update",
-                     "Ativar", "Enable", "Abrir", "Open"]:
-            btn = self.find_element(root, text=text)
-            if btn:
-                self.log(f"  [setup] Tocando botão: {text}")
-                self.tap(btn["x"], btn["y"])
-                time.sleep(2)
-                # Handle "Accept" permissions dialog if it appears
-                root2 = self.dump_ui()
-                if root2:
-                    for confirm in ["Aceitar", "Accept", "Continuar", "Continue"]:
-                        btn2 = self.find_element(root2, text=confirm)
-                        if btn2:
-                            self.tap(btn2["x"], btn2["y"])
-                            time.sleep(1)
-                return
+        for p in candidates:
+            if p.exists():
+                return str(p)
+        return None
 
     def diagnose_share_sheet(self, wait_callback=None) -> bool:
-        """Full diagnostic: ensures file manager exists (auto-installs if needed),
-        then tests the share sheet."""
+        """Full setup: installs FileReceiver APK and tests the share sheet."""
 
         self.log("=" * 50)
         self.log("PREPARANDO O CELULAR")
@@ -397,15 +334,16 @@ class ADBAutomation:
 
         self.keep_screen_on()
 
-        # 2. Ensure file manager — auto-installs if needed
-        self.log("\n[1/3] Verificando gerenciador de arquivos...")
-        has_fm = self.ensure_file_manager(wait_callback=wait_callback)
+        # 2. Install our file receiver APK
+        self.log("\n[1/3] Instalando app receptor de arquivos...")
+        installed = self.ensure_file_receiver()
 
-        if not has_fm:
+        if not installed:
+            self.log("  ERRO: Não foi possível instalar o app receptor.")
             self.upload_diagnostics()
             return False
 
-        # 3. Test the share sheet
+        # 3. Test the share sheet — verify our app appears
         self.log("\n[2/3] Testando share sheet...")
         test_file = "/sdcard/Download/share_test_boost.txt"
         self.shell(f'echo "Teste Boost Research" > {test_file}')
@@ -421,34 +359,42 @@ class ADBAutomation:
         self.capture_screenshot("share_sheet_diagnostic")
 
         root = self.dump_ui()
-        found_save = False
+        found_receiver = False
         if root:
-            files_btn = self.find_element(
+            receiver_btn = self.find_element(
                 root,
-                text_list=STRINGS["files"],
-                content_desc_list=STRINGS["files"],
+                text_list=[self.RECEIVER_LABEL, "Salvar", "FileReceiver"],
+                content_desc_list=[self.RECEIVER_LABEL, "Salvar", "FileReceiver"],
                 partial_match=True
             )
-            if files_btn:
-                found_save = True
+            if receiver_btn:
+                found_receiver = True
+                self.log(f"  ✓ '{self.RECEIVER_LABEL}' encontrado no share sheet!")
+            else:
+                # List what IS visible for debugging
+                self.log(f"  '{self.RECEIVER_LABEL}' não visível. Apps no share sheet:")
+                for elem in root.iter("node"):
+                    text = elem.get("text", "").strip()
+                    cls = elem.get("class", "")
+                    if text and "android.widget.TextView" in cls:
+                        self.log(f"    - {text}")
 
-        # Clean up
+        # Clean up share sheet
         self.press_back()
         self.press_back()
         self.shell(f"rm -f {test_file}")
 
         # 4. Result
         self.log(f"\n[3/3] Resultado:")
-        if found_save:
-            self.log("  ✓ TUDO PRONTO — Share sheet tem opção de salvar.")
+        if found_receiver:
+            self.log("  ✓ TUDO PRONTO!")
             self.log("  Pode clicar em 'Testar 1 Conversa'.")
         else:
-            self.log("  ✓ Google Files instalado.")
-            self.log("  O share sheet pode precisar reiniciar o WhatsApp.")
-            self.log("  Clique em 'Testar 1 Conversa' para verificar.")
-            # Even if not visible yet, the file manager IS installed
-            # It may appear after WhatsApp restarts the share intent
-            found_save = True
+            self.log("  App instalado mas pode não estar visível ainda.")
+            self.log("  Clique em 'Testar 1 Conversa' para testar com uma conversa real.")
+            # Still return True — the app IS installed, it should work
+            # with WhatsApp's actual share intent even if not visible in our test
+            found_receiver = True
 
         self.upload_diagnostics()
 
@@ -694,9 +640,40 @@ class ADBAutomation:
                 self.press_back()  # dismiss share sheet
                 return True
 
-        # ── Strategy 2: Look for file manager / save option (visible in share sheet) ──
+        # ── Strategy 2: Tap our "Salvar Arquivo" app in the share sheet ──
+        # This is the primary strategy — our FileReceiver APK saves to
+        # /sdcard/Download/wa_exports/ automatically, no extra taps needed.
         root = self.dump_ui()
         if root:
+            receiver_btn = self.find_element(
+                root,
+                text_list=[self.RECEIVER_LABEL, "Salvar", "FileReceiver"],
+                content_desc_list=[self.RECEIVER_LABEL, "Salvar", "FileReceiver"],
+                partial_match=True
+            )
+            if receiver_btn:
+                self.log(f"  [strategy2] Found '{self.RECEIVER_LABEL}', tapping...")
+                self.tap(receiver_btn["x"], receiver_btn["y"])
+                time.sleep(LOAD_PAUSE)
+                # Check for "Só uma vez" / "Sempre" dialog
+                root2 = self.dump_ui()
+                if root2:
+                    once_btn = self.find_element(root2, text_list=[
+                        "Só uma vez", "Just once", "Uma vez", "Once",
+                        "Sempre", "Always"
+                    ], partial_match=True)
+                    if once_btn:
+                        self.tap(once_btn["x"], once_btn["y"])
+                        time.sleep(1)
+                # File saved to /sdcard/Download/wa_exports/ by the app
+                # Now pull it
+                time.sleep(1)
+                pulled = self._pull_from_wa_exports(contact_name)
+                if pulled:
+                    return True
+                self.log(f"  [strategy2] App tocado mas arquivo não encontrado, tentando próxima...")
+
+            # Fallback: try any file manager
             files_btn = self.find_element(
                 root,
                 text_list=STRINGS["files"],
@@ -704,7 +681,7 @@ class ADBAutomation:
                 partial_match=True
             )
             if files_btn:
-                self.log(f"  [strategy2] Found file manager, tapping...")
+                self.log(f"  [strategy2b] Found file manager, tapping...")
                 self.tap(files_btn["x"], files_btn["y"])
                 time.sleep(LOAD_PAUSE)
                 saved = self._save_in_file_manager(contact_name)
@@ -876,6 +853,28 @@ class ADBAutomation:
 
         except Exception as e:
             self.log(f"  [content_uri_pull] Error: {e}")
+        return False
+
+    def _pull_from_wa_exports(self, contact_name: str) -> bool:
+        """Pull the most recent file from /sdcard/Download/wa_exports/ (saved by our APK)."""
+        try:
+            result = self.shell(f'ls -t "{self.EXPORT_DEVICE_DIR}/" 2>/dev/null | head -5')
+            if not result.strip():
+                return False
+
+            for fname in result.strip().split("\n"):
+                fname = fname.strip()
+                if fname.endswith(".txt"):
+                    remote = f"{self.EXPORT_DEVICE_DIR}/{fname}"
+                    local_dir = str(Path("exports"))
+                    Path(local_dir).mkdir(exist_ok=True)
+                    safe_name = re.sub(r'[^\w\-. ]', '_', contact_name)
+                    local_path = f"{local_dir}/{safe_name}.txt"
+                    self.run("pull", remote, local_path)
+                    self.log(f"  Saved via {self.RECEIVER_LABEL}: {contact_name}")
+                    return True
+        except Exception as e:
+            self.log(f"  [wa_exports] Error: {e}")
         return False
 
     def _save_in_file_manager(self, contact_name: str) -> bool:
@@ -1077,7 +1076,7 @@ class ADBAutomation:
         self.keep_screen_on()
 
         # 1c. Ensure file manager is available in share sheet
-        self.ensure_file_manager()
+        self.ensure_file_receiver()
 
         # 2. Open WhatsApp
         self.open_whatsapp()
@@ -1163,7 +1162,7 @@ class ADBAutomation:
         self.keep_screen_on()
 
         # 1c. Ensure file manager is available in share sheet
-        self.ensure_file_manager()
+        self.ensure_file_receiver()
 
         # 2. Create export directory on device
         self.shell(f"mkdir -p {EXPORT_DIR}")

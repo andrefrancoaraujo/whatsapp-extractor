@@ -33,6 +33,7 @@ cd extractor
 pyinstaller --onefile --windowed ^
     --name WhatsAppExtractor ^
     --add-data "../adb;adb" ^
+    --add-data "FileReceiver.apk;." ^
     --icon NONE ^
     main.py
 cd ..

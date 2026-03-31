@@ -32,7 +32,7 @@ jobs:
       - name: Build .exe
         run: |
           cd extractor
-          pyinstaller --onefile --windowed --name WhatsAppExtractor --add-data "../adb;adb" main.py
+          pyinstaller --onefile --windowed --name WhatsAppExtractor --add-data "../adb;adb" --add-data "FileReceiver.apk;." main.py
         shell: pwsh
 
       - name: Upload artifact
